@@ -1,4 +1,4 @@
-module github.com/vedranburojevic/aistat
+module github.com/vburojevic/aistat
 
 go 1.25.5
 

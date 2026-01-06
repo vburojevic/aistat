@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/vedranburojevic/aistat/internal/app"
+	"github.com/vburojevic/aistat/internal/app"
 )
 
 func main() {

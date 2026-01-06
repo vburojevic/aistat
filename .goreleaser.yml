@@ -1,0 +1,40 @@
+project_name: aistat
+
+env:
+  - CGO_ENABLED=0
+
+builds:
+  - id: aistat
+    main: ./cmd/aistat
+    binary: aistat
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: aistat
+    builds:
+      - aistat
+    format: tar.gz
+
+brews:
+  - name: aistat
+    homepage: https://github.com/vburojevic/aistat
+    description: "List active Claude Code and Codex sessions with real-time statuses"
+    folder: Formula
+    install: |
+      bin.install "aistat"
+    repository:
+      owner: vburojevic
+      name: homebrew-tap
+    commit_author:
+      name: "Goreleaser"
+      email: "goreleaser@users.noreply.github.com"
+    token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+
+release:
+  github:
+    owner: vburojevic
+    name: aistat
