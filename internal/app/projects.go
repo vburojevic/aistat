@@ -26,6 +26,7 @@ func newProjectsCmd() *cobra.Command {
 		flagJSON     bool
 		flagProvider string
 		flagSort     string
+		flagAll      bool
 	)
 
 	cmd := &cobra.Command{
@@ -36,7 +37,10 @@ func newProjectsCmd() *cobra.Command {
 			cfg.ProviderFilter = strings.TrimSpace(strings.ToLower(flagProvider))
 			cfg.ProjectFilters = nil
 			cfg.StatusFilters = nil
-			cfg.IncludeEnded = true
+			cfg.IncludeEnded = flagAll
+			if cfg.IncludeEnded {
+				cfg.AllScanWindow = defaultAllScanWindow
+			}
 			cfg.MaxSessions = 0
 			cfg.GroupBy = ""
 
@@ -59,6 +63,7 @@ func newProjectsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "Output JSON instead of table")
 	cmd.Flags().StringVar(&flagProvider, "provider", "", "Filter by provider: claude|codex")
 	cmd.Flags().StringVar(&flagSort, "sort", "count", "Sort by: count|name|last_seen")
+	cmd.Flags().BoolVar(&flagAll, "all", false, "Include ended/stale sessions")
 	return cmd
 }
 

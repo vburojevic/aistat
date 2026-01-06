@@ -56,6 +56,7 @@ type projectItem struct {
 	count       int
 	lastSeen    time.Time
 	statusCount map[Status]int
+	providers   map[Provider]int
 }
 
 type tuiKeyMap struct {
@@ -66,6 +67,7 @@ type tuiKeyMap struct {
 	Palette       key.Binding
 	Help          key.Binding
 	Projects      key.Binding
+	Dashboard     key.Binding
 	ToggleRedact  key.Binding
 	CopyID        key.Binding
 	CopyDetail    key.Binding
@@ -93,7 +95,7 @@ type tuiKeyMap struct {
 }
 
 func (k tuiKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Quit, k.Refresh, k.Filter, k.Palette, k.Projects, k.Help}
+	return []key.Binding{k.Quit, k.Refresh, k.Filter, k.Palette, k.Projects, k.Dashboard, k.Help}
 }
 func (k tuiKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
@@ -101,6 +103,7 @@ func (k tuiKeyMap) FullHelp() [][]key.Binding {
 		{k.ToggleSort, k.ToggleGroup, k.ToggleView, k.ToggleLast, k.ToggleDetail},
 		{k.CopyID, k.CopyDetail, k.OpenFile, k.TogglePin, k.ToggleSelect},
 		{k.JumpApproval, k.JumpRunning, k.ToggleTheme, k.ToggleAccess, k.ToggleSidebar},
+		{k.Dashboard},
 		{k.Help},
 	}
 }
@@ -158,6 +161,7 @@ type tuiModel struct {
 	showHelp      bool
 	showBanner    bool
 	projectsOpen  bool
+	showDashboard bool
 
 	selected map[string]bool
 	pinned   map[string]bool
@@ -303,6 +307,7 @@ func runTUI(cfg Config) error {
 		Palette:       key.NewBinding(key.WithKeys(":"), key.WithHelp(":", "palette")),
 		Help:          key.NewBinding(key.WithKeys("?", "h"), key.WithHelp("?", "help")),
 		Projects:      key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "projects")),
+		Dashboard:     key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "dashboard")),
 		ToggleRedact:  key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "toggle redact")),
 		CopyID:        key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "copy id(s)")),
 		CopyDetail:    key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "copy detail")),
@@ -453,7 +458,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ensureProjectCursor()
 				return m, nil
 			case "enter", " ":
-				m.toggleProjectFilterByIndex()
+				m.toggleProjectFilterByIndex(m.filteredProjectItems())
 				m.applyFilterAndUpdateRows()
 				return m, nil
 			case "a":
@@ -464,6 +469,44 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				m.project, cmd = m.project.Update(msg)
 				m.ensureProjectCursor()
+				return m, cmd
+			}
+		}
+
+		if m.showDashboard {
+			switch msg.String() {
+			case "tab", "esc":
+				m.showDashboard = false
+				m.project.Blur()
+				return m, nil
+			case "ctrl+c":
+				return m, tea.Quit
+			case "up", "k":
+				m.projectIndex--
+				m.normalizeProjectIndex(len(m.filteredDashboardItems()))
+				return m, nil
+			case "down", "j":
+				m.projectIndex++
+				m.normalizeProjectIndex(len(m.filteredDashboardItems()))
+				return m, nil
+			case "enter":
+				m.focusProjectFromDashboard()
+				m.showDashboard = false
+				m.project.Blur()
+				m.applyFilterAndUpdateRows()
+				return m, nil
+			case " ":
+				m.toggleProjectFilterByIndex(m.filteredDashboardItems())
+				m.applyFilterAndUpdateRows()
+				return m, nil
+			case "a":
+				m.projectFilter = map[string]bool{}
+				m.applyFilterAndUpdateRows()
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.project, cmd = m.project.Update(msg)
+				m.normalizeProjectIndex(len(m.filteredDashboardItems()))
 				return m, cmd
 			}
 		}
@@ -518,11 +561,22 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.paletteOpen = true
 			m.palette.Focus()
 			m.paletteMsg = palettePreview("")
+		case "tab":
+			m.showDashboard = !m.showDashboard
+			if m.showDashboard {
+				m.project.Focus()
+				m.project.SetValue("")
+				m.projectIndex = 0
+				m.showBanner = false
+			} else {
+				m.project.Blur()
+			}
 		case "?", "h":
 			m.showHelp = true
 			m.showBanner = false
 			m.paletteOpen = false
 			m.projectsOpen = false
+			m.showDashboard = false
 			m.palette.Blur()
 			m.project.Blur()
 			m.filter.Blur()
@@ -730,10 +784,17 @@ func (m *tuiModel) executePaletteCommand(raw string) {
 
 	switch cmd {
 	case "help", "?":
-		m.paletteMsg = "Commands: projects, clear-filters, reset-view, show, open, copy-id, copy-detail, sort <key>, group <key>, view <full|compact>, theme, last-msg <on|off>"
+		m.paletteMsg = "Commands: dashboard, projects, clear-filters, reset-view, show, open, copy-id, copy-detail, sort <key>, group <key>, view <full|compact>, theme, last-msg <on|off>"
 	case "show", "detail":
 		m.modeDetail = detailFull
 		m.paletteMsg = "Detail view: full"
+	case "dashboard":
+		m.showDashboard = true
+		m.project.Focus()
+		m.project.SetValue("")
+		m.projectIndex = 0
+		m.showBanner = false
+		m.paletteMsg = "Dashboard"
 	case "projects":
 		m.projectsOpen = true
 		m.project.Focus()
@@ -814,7 +875,7 @@ func (m *tuiModel) executePaletteCommand(raw string) {
 }
 
 func resolvePaletteCommand(input string) string {
-	commands := []string{"projects", "clear-filters", "reset-view", "show", "detail", "open", "copy-id", "copy-detail", "sort", "group", "view", "theme", "last-msg", "help", "?"}
+	commands := []string{"dashboard", "projects", "clear-filters", "reset-view", "show", "detail", "open", "copy-id", "copy-detail", "sort", "group", "view", "theme", "last-msg", "help", "?"}
 	for _, c := range commands {
 		if c == input {
 			return c
@@ -836,7 +897,7 @@ func resolvePaletteCommand(input string) string {
 func palettePreview(raw string) string {
 	cmdLine := strings.TrimSpace(raw)
 	if cmdLine == "" {
-		return "Palette: projects, clear-filters, reset-view, show, open, copy-id, copy-detail, sort <key>, group <key>, view <full|compact|ultra|card>, theme, last-msg <on|off>"
+		return "Palette: dashboard, projects, clear-filters, reset-view, show, open, copy-id, copy-detail, sort <key>, group <key>, view <full|compact|ultra|card>, theme, last-msg <on|off>"
 	}
 	parts := strings.Fields(cmdLine)
 	cmd := resolvePaletteCommand(strings.ToLower(parts[0]))
@@ -857,6 +918,8 @@ func palettePreview(raw string) string {
 		return "Copy selected IDs"
 	case "copy-detail":
 		return "Copy detail panel"
+	case "dashboard":
+		return "Open projects dashboard"
 	case "projects":
 		return "Open project picker"
 	case "clear-filters":
@@ -1262,6 +1325,10 @@ func (m *tuiModel) View() string {
 		listContent = m.projectsView()
 	}
 
+	if m.showDashboard {
+		listContent = m.dashboardView()
+	}
+
 	if m.showHelp {
 		listContent = m.helpOverlayView()
 	}
@@ -1302,6 +1369,9 @@ func (m *tuiModel) View() string {
 }
 
 func (m *tuiModel) detailView() string {
+	if m.showDashboard {
+		return m.dashboardDetailView()
+	}
 	if s, ok := m.selectedSession(); ok {
 		return formatDetailBlock(s)
 	}
@@ -1309,6 +1379,44 @@ func (m *tuiModel) detailView() string {
 		return "Error: " + m.err.Error()
 	}
 	return "No session selected."
+}
+
+func (m *tuiModel) dashboardDetailView() string {
+	items := m.filteredDashboardItems()
+	if len(items) == 0 {
+		return "No project selected."
+	}
+	m.normalizeProjectIndex(len(items))
+	it := items[m.projectIndex]
+
+	var providers []string
+	for p, c := range it.providers {
+		providers = append(providers, fmt.Sprintf("%s:%d", p, c))
+	}
+	sort.Strings(providers)
+
+	last := ""
+	if !it.lastSeen.IsZero() {
+		last = it.lastSeen.In(time.Local).Format("2006-01-02 15:04")
+	}
+
+	lines := []string{
+		fmt.Sprintf("Project: %s", it.name),
+		fmt.Sprintf("Total: %d", it.count),
+		fmt.Sprintf("Running: %d", it.statusCount[StatusRunning]),
+		fmt.Sprintf("Waiting: %d", it.statusCount[StatusWaiting]),
+		fmt.Sprintf("Approval: %d", it.statusCount[StatusApproval]),
+		fmt.Sprintf("Needs attention: %d", it.statusCount[StatusNeedsAttn]),
+		fmt.Sprintf("Stale: %d", it.statusCount[StatusStale]),
+		fmt.Sprintf("Ended: %d", it.statusCount[StatusEnded]),
+	}
+	if len(providers) > 0 {
+		lines = append(lines, fmt.Sprintf("Providers: %s", strings.Join(providers, ", ")))
+	}
+	if last != "" {
+		lines = append(lines, fmt.Sprintf("Last seen: %s", last))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *tuiModel) emptyStateView() string {
@@ -1405,6 +1513,12 @@ func (m *tuiModel) actionsView() string {
 	if m.paletteOpen {
 		return "Palette: enter to run • esc to cancel"
 	}
+	if m.projectsOpen {
+		return "Projects: enter/space toggle • a clear • esc close"
+	}
+	if m.showDashboard {
+		return "Dashboard: enter focus • space toggle • a clear • tab back"
+	}
 	return ""
 }
 
@@ -1466,54 +1580,57 @@ func (m *tuiModel) shortcutsBar() string {
 	entries := []string{
 		"/ filter",
 		": palette",
+		"tab dashboard",
 		"p projects",
+		"r refresh",
+		"? help",
+		"q quit",
 		"s sort",
 		"g group",
 		"v view",
 		"d detail",
 		"b sidebar",
 		"m last-msg",
+		"c redact",
 		"space select",
 		"P pin",
-		"y copy",
-		"D detail",
+		"y copy ids",
+		"D copy detail",
 		"o open",
 		"a jump approval",
 		"u jump running",
+		"1/2 providers",
+		"R/W/E/S/Z/N status",
 		"t theme",
 		"A access",
-		"? help",
-		"q quit",
 	}
 
-	if m.width < 120 {
-		entries = []string{
-			"/ filter",
-			": palette",
-			"p projects",
-			"s sort",
-			"g group",
-			"v view",
-			"? help",
-			"q quit",
-		}
-	}
-	if m.width < 80 {
-		entries = []string{
-			"/ filter",
-			": palette",
-			"p projects",
-			"? help",
-			"q quit",
-		}
-	}
-
-	line := strings.Join(entries, "  ")
 	width := m.width
 	if width <= 0 {
-		width = 100
+		width = 120
 	}
-	return styleShortcutBar.Width(width).Render(line)
+	sep := "  •  "
+	var lines []string
+	line := ""
+	for _, entry := range entries {
+		if line == "" {
+			line = entry
+			continue
+		}
+		if runeLen(line)+runeLen(sep)+runeLen(entry) <= width {
+			line += sep + entry
+			continue
+		}
+		lines = append(lines, line)
+		line = entry
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	for i, l := range lines {
+		lines[i] = styleShortcutBar.Width(width).Render(l)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *tuiModel) sidebarView(width int) string {
@@ -1589,11 +1706,12 @@ func buildProjectItems(sessions []SessionView) []projectItem {
 		key := strings.ToLower(s.Project)
 		item := byName[key]
 		if item == nil {
-			item = &projectItem{name: s.Project, statusCount: map[Status]int{}}
+			item = &projectItem{name: s.Project, statusCount: map[Status]int{}, providers: map[Provider]int{}}
 			byName[key] = item
 		}
 		item.count++
 		item.statusCount[s.Status]++
+		item.providers[s.Provider]++
 		if s.LastSeen.After(item.lastSeen) {
 			item.lastSeen = s.LastSeen
 		}
@@ -1629,22 +1747,56 @@ func (m *tuiModel) filteredProjectItems() []projectItem {
 	return filterProjectItems(m.projectItems, m.project.Value())
 }
 
-func (m *tuiModel) ensureProjectCursor() {
-	items := m.filteredProjectItems()
-	if len(items) == 0 {
-		m.projectIndex = 0
-		return
+func (m *tuiModel) dashboardProjectItems() []projectItem {
+	byName := map[string]*projectItem{}
+	for _, s := range m.allSessions {
+		if s.Project == "" {
+			continue
+		}
+		if !m.matchesProvider(s.Provider) {
+			continue
+		}
+		if !m.matchesStatus(s.Status) {
+			continue
+		}
+		if s.Status == StatusEnded || s.Status == StatusStale {
+			continue
+		}
+		key := strings.ToLower(s.Project)
+		item := byName[key]
+		if item == nil {
+			item = &projectItem{name: s.Project, statusCount: map[Status]int{}, providers: map[Provider]int{}}
+			byName[key] = item
+		}
+		item.count++
+		item.statusCount[s.Status]++
+		item.providers[s.Provider]++
+		if s.LastSeen.After(item.lastSeen) {
+			item.lastSeen = s.LastSeen
+		}
 	}
-	if m.projectIndex < 0 {
-		m.projectIndex = 0
+	items := make([]projectItem, 0, len(byName))
+	for _, item := range byName {
+		items = append(items, *item)
 	}
-	if m.projectIndex >= len(items) {
-		m.projectIndex = len(items) - 1
-	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].count == items[j].count {
+			return strings.ToLower(items[i].name) < strings.ToLower(items[j].name)
+		}
+		return items[i].count > items[j].count
+	})
+	return items
 }
 
-func (m *tuiModel) toggleProjectFilterByIndex() {
-	items := m.filteredProjectItems()
+func (m *tuiModel) filteredDashboardItems() []projectItem {
+	return filterProjectItems(m.dashboardProjectItems(), m.project.Value())
+}
+
+func (m *tuiModel) ensureProjectCursor() {
+	m.normalizeProjectIndex(len(m.filteredProjectItems()))
+}
+
+func (m *tuiModel) toggleProjectFilterByIndex(items []projectItem) {
 	if len(items) == 0 {
 		return
 	}
@@ -1652,6 +1804,31 @@ func (m *tuiModel) toggleProjectFilterByIndex() {
 		return
 	}
 	m.toggleProjectFilter(items[m.projectIndex].name)
+}
+
+func (m *tuiModel) focusProjectFromDashboard() {
+	items := m.filteredDashboardItems()
+	if len(items) == 0 {
+		return
+	}
+	if m.projectIndex < 0 || m.projectIndex >= len(items) {
+		return
+	}
+	name := items[m.projectIndex].name
+	m.projectFilter = map[string]bool{strings.ToLower(name): true}
+}
+
+func (m *tuiModel) normalizeProjectIndex(size int) {
+	if size <= 0 {
+		m.projectIndex = 0
+		return
+	}
+	if m.projectIndex < 0 {
+		m.projectIndex = 0
+	}
+	if m.projectIndex >= size {
+		m.projectIndex = size - 1
+	}
 }
 
 func (m *tuiModel) projectsView() string {
@@ -1707,6 +1884,73 @@ func (m *tuiModel) projectsView() string {
 	return styleOverlayBox.Render(strings.Join(lines, "\n"))
 }
 
+func (m *tuiModel) dashboardView() string {
+	items := m.filteredDashboardItems()
+	m.normalizeProjectIndex(len(items))
+
+	var lines []string
+	lines = append(lines, styleSection.Render("Projects Dashboard"))
+	lines = append(lines, styleMuted.Render("tab back • enter focus • space toggle • a clear"))
+	lines = append(lines, "")
+
+	input := m.project.View()
+	if m.project.Value() == "" {
+		input = styleMuted.Render(m.project.Prompt + m.project.Placeholder)
+	}
+	lines = append(lines, input)
+	lines = append(lines, "")
+
+	header := fmt.Sprintf("%-20s %4s  %3s %3s %3s %3s %3s %3s  %s",
+		"PROJECT", "CNT", "▶", "⏸", "⚠", "‼", "…", "✓", "LAST")
+	lines = append(lines, styleMuted.Render(header))
+
+	if len(items) == 0 {
+		lines = append(lines, "No active projects found.")
+		return styleOverlayBox.Render(strings.Join(lines, "\n"))
+	}
+
+	maxRows := maxInt(6, m.height-12)
+	if maxRows > len(items) {
+		maxRows = len(items)
+	}
+	start := 0
+	if m.projectIndex >= maxRows {
+		start = m.projectIndex - maxRows + 1
+	}
+	end := minInt(len(items), start+maxRows)
+
+	for i := start; i < end; i++ {
+		it := items[i]
+		active := m.projectFilter[strings.ToLower(it.name)]
+		check := " "
+		if active {
+			check = "●"
+		}
+		last := ""
+		if !it.lastSeen.IsZero() {
+			last = it.lastSeen.In(time.Local).Format("01-02 15:04")
+		}
+		line := fmt.Sprintf("%s %-20s %4d  %3d %3d %3d %3d %3d %3d  %s",
+			check,
+			it.name,
+			it.count,
+			it.statusCount[StatusRunning],
+			it.statusCount[StatusWaiting],
+			it.statusCount[StatusApproval],
+			it.statusCount[StatusNeedsAttn],
+			it.statusCount[StatusStale],
+			it.statusCount[StatusEnded],
+			last,
+		)
+		if i == m.projectIndex {
+			line = styleOverlaySel.Render(line)
+		}
+		lines = append(lines, line)
+	}
+
+	return styleOverlayBox.Render(strings.Join(lines, "\n"))
+}
+
 func (m *tuiModel) helpOverlayView() string {
 	lines := []string{
 		styleSection.Render("Help"),
@@ -1714,6 +1958,7 @@ func (m *tuiModel) helpOverlayView() string {
 		"Navigation: ↑/↓ or j/k, enter to act, esc to cancel",
 		"Search: / filter (p:project, s:status), esc clears",
 		"Projects: p opens picker, space/enter toggles project filter",
+		"Dashboard: tab opens projects dashboard",
 		"Views: s sort, g group, v view, d detail, b sidebar, m last-msg",
 		"Filters: 1/2 provider, R/W/E/S/Z/N status",
 		"Actions: space select, P pin, y copy ids, D copy detail, o open log",
@@ -1912,6 +2157,10 @@ func truncateString(s string, max int) string {
 	}
 	parts := []rune(s)
 	return string(parts[:max-1]) + "…"
+}
+
+func runeLen(s string) int {
+	return len([]rune(s))
 }
 
 func clampInt(val, min, max int) int {

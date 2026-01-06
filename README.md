@@ -39,6 +39,7 @@ aistat
 ```
 
 Tip: press `:` in the TUI for the command palette, `d` to toggle detail. Press `p` to open the project picker.
+Press `tab` to open the projects dashboard.
 
 ### 2) Wire integrations (recommended)
 
@@ -94,6 +95,7 @@ aistat doctor --fix
 - `/` filter, `esc` clear
 - `:` command palette
 - `p` project picker (toggle projects)
+- `tab` projects dashboard (active projects overview)
 - `d` toggle detail pane (split view on wide screens)
 - `b` toggle sidebar filters
 - `s` sort, `g` group, `v` view
@@ -147,6 +149,12 @@ List all projects:
 
 ```sh
 aistat projects
+```
+
+Include ended/stale projects:
+
+```sh
+aistat projects --all
 ```
 
 Live TUI:
