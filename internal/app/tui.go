@@ -27,12 +27,22 @@ type sessionsMsg struct {
 }
 
 type tickMsg time.Time
+type animMsg time.Time
 
 type rowKind int
 
 const (
 	rowSession rowKind = iota
 	rowGroup
+)
+
+const (
+	splitMinWidth     = 120
+	splitMinListWidth = 60
+	sidebarMaxWidth   = 28
+	splitGap          = 1
+	animStep          = 4
+	animInterval      = 30 * time.Millisecond
 )
 
 type rowMeta struct {
@@ -151,6 +161,11 @@ type tuiModel struct {
 	history      map[string][]time.Time
 	lastOrder    map[string]int
 	moveDir      map[string]int
+
+	sidebarWidth  int
+	sidebarTarget int
+	detailWidth   int
+	detailTarget  int
 
 	err         error
 	lastRefresh time.Time
@@ -329,6 +344,10 @@ func tickCmd(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
+func animCmd() tea.Cmd {
+	return tea.Tick(animInterval, func(t time.Time) tea.Msg { return animMsg(t) })
+}
+
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -336,6 +355,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.filter.Width = minInt(60, maxInt(20, m.width-20))
+		cmds = append(cmds, m.updateLayoutTargets())
 		m.applyColumns()
 		tableHeight := maxInt(5, m.height-2-1-9-1)
 		m.table.SetHeight(tableHeight)
@@ -350,6 +370,10 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tickMsg:
 		cmds = append(cmds, fetchSessionsCmd(m.cfg), tickCmd(m.cfg.RefreshEvery))
+	case animMsg:
+		if m.stepLayoutAnimation() {
+			cmds = append(cmds, animCmd())
+		}
 
 	case tea.KeyMsg:
 		if m.paletteOpen {
@@ -456,12 +480,14 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applyTableStyles()
 		case "b":
 			m.showSidebar = !m.showSidebar
+			cmds = append(cmds, m.updateLayoutTargets())
 		case "d":
 			if m.modeDetail == detailSplit {
 				m.modeDetail = detailFull
 			} else {
 				m.modeDetail = detailSplit
 			}
+			cmds = append(cmds, m.updateLayoutTargets())
 		case "1":
 			m.toggleProviderFilter(ProviderClaude)
 			m.applyFilterAndUpdateRows()
@@ -502,16 +528,85 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *tuiModel) applyColumns() {
 	mode := m.columnMode
 	if mode != "card" {
-		if m.width < 80 {
+		if m.tableWidth() < 80 {
 			mode = "ultra"
-		} else if m.width < 100 && mode == "full" {
+		} else if m.tableWidth() < 100 && mode == "full" {
 			mode = "compact"
 		}
 	}
 	m.effectiveMode = mode
-	cols, idCol := columnsFor(m.width, mode, m.showLastCol)
+	cols, idCol := columnsFor(m.tableWidth(), mode, m.showLastCol)
 	m.table.SetColumns(cols)
 	m.idColumn = idCol
+}
+
+func (m *tuiModel) splitActive() bool {
+	if m.modeDetail != detailSplit {
+		return false
+	}
+	return m.width >= splitMinWidth && (m.detailTarget > 0 || m.detailWidth > 0)
+}
+
+func (m *tuiModel) listPaneWidth() int {
+	width := m.width
+	if m.splitActive() && m.detailWidth > 0 {
+		width -= m.detailWidth + splitGap
+	}
+	if width < 20 {
+		return 20
+	}
+	return width
+}
+
+func (m *tuiModel) tableWidth() int {
+	width := m.listPaneWidth()
+	if m.sidebarWidth > 0 {
+		width -= m.sidebarWidth
+	}
+	if width < 20 {
+		return 20
+	}
+	return width
+}
+
+func (m *tuiModel) updateLayoutTargets() tea.Cmd {
+	sidebarTarget := 0
+	if m.showSidebar && m.width >= 100 {
+		sidebarTarget = sidebarMaxWidth
+	}
+
+	detailTarget := 0
+	if m.modeDetail == detailSplit && m.width >= splitMinWidth {
+		available := m.width - splitGap
+		detailTarget = clampInt(available/3, 32, 60)
+		if available-detailTarget-sidebarTarget < splitMinListWidth {
+			detailTarget = 0
+		}
+	}
+
+	m.sidebarTarget = sidebarTarget
+	m.detailTarget = detailTarget
+
+	if m.sidebarWidth != m.sidebarTarget || m.detailWidth != m.detailTarget {
+		return animCmd()
+	}
+	return nil
+}
+
+func (m *tuiModel) stepLayoutAnimation() bool {
+	changed := false
+	if m.sidebarWidth != m.sidebarTarget {
+		m.sidebarWidth = stepToward(m.sidebarWidth, m.sidebarTarget, animStep)
+		changed = true
+	}
+	if m.detailWidth != m.detailTarget {
+		m.detailWidth = stepToward(m.detailWidth, m.detailTarget, animStep)
+		changed = true
+	}
+	if changed {
+		m.applyColumns()
+	}
+	return m.sidebarWidth != m.sidebarTarget || m.detailWidth != m.detailTarget
 }
 
 func (m *tuiModel) executePaletteCommand(raw string) {
@@ -1074,9 +1169,12 @@ func (m *tuiModel) View() string {
 	b.WriteString(styleMuted.Render(m.actionsView()))
 	b.WriteString("\n")
 
-	content := m.table.View()
-	if m.showSidebar && m.width >= 100 {
-		content = lipgloss.JoinHorizontal(lipgloss.Top, m.sidebarView(), content)
+	listContent := m.table.View()
+	if m.filterTotal == 0 {
+		listContent = m.emptyStateView()
+	}
+	if m.showSidebar && m.sidebarWidth > 0 {
+		listContent = lipgloss.JoinHorizontal(lipgloss.Top, m.sidebarView(m.sidebarWidth), listContent)
 	}
 
 	if m.modeDetail == detailFull {
@@ -1086,7 +1184,22 @@ func (m *tuiModel) View() string {
 		return b.String()
 	}
 
-	b.WriteString(content)
+	if m.splitActive() && m.detailWidth > 0 {
+		listPane := lipgloss.NewStyle().Width(m.listPaneWidth()).Render(listContent)
+		detailPane := styleDetailBox.Render(m.detailView())
+		detailPane = lipgloss.NewStyle().Width(m.detailWidth).Render(detailPane)
+		gap := strings.Repeat(" ", splitGap)
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, listPane, gap, detailPane))
+		b.WriteString("\n")
+		b.WriteString(styleMuted.Render(m.help.View(m.keys)))
+		if m.err != nil && !m.filter.Focused() {
+			b.WriteString("\n")
+			b.WriteString(styleMuted.Render("⚠ " + m.err.Error()))
+		}
+		return b.String()
+	}
+
+	b.WriteString(listContent)
 	b.WriteString("\n")
 	b.WriteString(styleDetailBox.Render(m.detailView()))
 	b.WriteString("\n")
@@ -1107,6 +1220,31 @@ func (m *tuiModel) detailView() string {
 		return "Error: " + m.err.Error()
 	}
 	return "No session selected."
+}
+
+func (m *tuiModel) emptyStateView() string {
+	var lines []string
+	if len(m.allSessions) == 0 {
+		lines = append(lines, styleTitle.Render("No sessions found"))
+		lines = append(lines, "Start a Claude or Codex session and come back.")
+		lines = append(lines, "")
+		lines = append(lines, "Next steps:")
+		lines = append(lines, "• press r to refresh")
+		lines = append(lines, "• run aistat doctor --fix")
+		lines = append(lines, "• check config: aistat config show")
+		lines = append(lines, "• toggle filters (1/2/R/W/E/S/Z/N)")
+	} else {
+		lines = append(lines, styleTitle.Render("No matches for current filters"))
+		if q := strings.TrimSpace(m.filter.Value()); q != "" {
+			lines = append(lines, fmt.Sprintf("Query: %q", q))
+		}
+		lines = append(lines, "")
+		lines = append(lines, "Try:")
+		lines = append(lines, "• press esc to clear the filter")
+		lines = append(lines, "• edit search: /  (examples: p:myproj, s:running)")
+		lines = append(lines, "• toggle filters (1/2/R/W/E/S/Z/N)")
+	}
+	return styleDetailBox.Render(strings.Join(lines, "\n"))
 }
 
 func formatDetailBlock(s SessionView) string {
@@ -1182,7 +1320,10 @@ func (m *tuiModel) actionsView() string {
 	return "Actions: / filter • : palette • s sort • g group • v view • m last-msg"
 }
 
-func (m *tuiModel) sidebarView() string {
+func (m *tuiModel) sidebarView(width int) string {
+	if width <= 0 {
+		return ""
+	}
 	var b strings.Builder
 	b.WriteString(styleMuted.Render("Filters"))
 	b.WriteString("\n")
@@ -1227,7 +1368,8 @@ func (m *tuiModel) sidebarView() string {
 		b.WriteString("\n")
 	}
 
-	return styleBox.Render(b.String())
+	content := styleBox.Render(b.String())
+	return lipgloss.NewStyle().Width(width).Render(content)
 }
 
 func (m *tuiModel) sidebarLine(key, label string, count int, active bool) string {
@@ -1409,6 +1551,34 @@ func truncateString(s string, max int) string {
 	}
 	parts := []rune(s)
 	return string(parts[:max-1]) + "…"
+}
+
+func clampInt(val, min, max int) int {
+	if val < min {
+		return min
+	}
+	if val > max {
+		return max
+	}
+	return val
+}
+
+func stepToward(cur, target, step int) int {
+	if cur == target || step <= 0 {
+		return target
+	}
+	if cur < target {
+		cur += step
+		if cur > target {
+			cur = target
+		}
+		return cur
+	}
+	cur -= step
+	if cur < target {
+		cur = target
+	}
+	return cur
 }
 
 func formatSince(ts time.Time) string {
