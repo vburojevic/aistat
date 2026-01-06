@@ -26,6 +26,7 @@ func RenderHelpOverlay(styles theme.Styles) string {
 		{"?", "Toggle help"},
 		{"q", "Quit"},
 		{"", ""},
+		{"b", "Toggle bookmark ★"},
 		{"y", "Copy session ID"},
 		{"r", "Refresh now"},
 		{"a", "Toggle show all"},

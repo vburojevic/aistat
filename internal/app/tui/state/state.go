@@ -36,6 +36,7 @@ type SessionView struct {
 
 	Project string
 	Dir     string
+	Branch  string // Git branch name for worktree identification
 	Model   string
 	Cost    float64
 	Age     time.Duration

@@ -35,6 +35,7 @@ func convertSessionViews(views []SessionView) []state.SessionView {
 			Reason:     v.Reason,
 			Project:    v.Project,
 			Dir:        v.Dir,
+			Branch:     v.Branch,
 			Model:      v.Model,
 			Cost:       v.Cost,
 			Age:        v.Age,

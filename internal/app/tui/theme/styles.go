@@ -29,9 +29,13 @@ type Styles struct {
 	BadgeNeedsInput lipgloss.Style // "N need input" badge in header
 
 	// Selection
-	Selected lipgloss.Style // Arrow indicator style
-	Row      lipgloss.Style // Normal row
+	Selected    lipgloss.Style // Arrow indicator style
+	RowSelected lipgloss.Style // Selected row background
+	Row         lipgloss.Style // Normal row (< 1h)
+	RowDim80    lipgloss.Style // Slightly dimmed (1-6h)
+	RowDim60 lipgloss.Style // More dimmed (6-24h)
 	RowDim   lipgloss.Style // Ended/dimmed row
+	RowDim40 lipgloss.Style // Very dimmed (>24h)
 
 	// Filter
 	FilterPrompt lipgloss.Style // "/ " prompt
@@ -46,6 +50,21 @@ type Styles struct {
 	// Provider
 	ProviderClaude lipgloss.Style
 	ProviderCodex  lipgloss.Style
+
+	// Model styles
+	ModelOpus   lipgloss.Style
+	ModelSonnet lipgloss.Style
+	ModelHaiku  lipgloss.Style
+
+	// Status text styles (for status-aware age labels)
+	StatusRunning lipgloss.Style
+	StatusIdle    lipgloss.Style
+	StatusWaiting lipgloss.Style
+	StatusEnded   lipgloss.Style
+
+	// Error styles
+	ErrorText   lipgloss.Style
+	ErrorBorder lipgloss.Style
 }
 
 // NewStyles creates styles from the theme
@@ -103,12 +122,27 @@ func NewStyles(t Theme) Styles {
 		Foreground(t.NeedsInput).
 		Bold(true)
 
+	s.RowSelected = lipgloss.NewStyle().
+		Background(t.Highlight)
+
 	s.Row = lipgloss.NewStyle().
 		Foreground(t.Text).
 		Padding(0, 1)
 
+	s.RowDim80 = lipgloss.NewStyle().
+		Foreground(t.Dim80).
+		Padding(0, 1)
+
+	s.RowDim60 = lipgloss.NewStyle().
+		Foreground(t.Dim60).
+		Padding(0, 1)
+
 	s.RowDim = lipgloss.NewStyle().
 		Foreground(t.Muted).
+		Padding(0, 1)
+
+	s.RowDim40 = lipgloss.NewStyle().
+		Foreground(t.Dim40).
 		Padding(0, 1)
 
 	// Filter
@@ -140,6 +174,21 @@ func NewStyles(t Theme) Styles {
 	// Provider styles
 	s.ProviderClaude = lipgloss.NewStyle().Foreground(t.Claude)
 	s.ProviderCodex = lipgloss.NewStyle().Foreground(t.Codex)
+
+	// Model styles
+	s.ModelOpus = lipgloss.NewStyle().Foreground(t.ModelOpus)
+	s.ModelSonnet = lipgloss.NewStyle().Foreground(t.ModelSonnet)
+	s.ModelHaiku = lipgloss.NewStyle().Foreground(t.ModelHaiku)
+
+	// Status text styles
+	s.StatusRunning = lipgloss.NewStyle().Foreground(t.Active)
+	s.StatusIdle = lipgloss.NewStyle().Foreground(t.Idle)
+	s.StatusWaiting = lipgloss.NewStyle().Foreground(t.NeedsInput)
+	s.StatusEnded = lipgloss.NewStyle().Foreground(t.Muted)
+
+	// Error styles
+	s.ErrorText = lipgloss.NewStyle().Foreground(t.Error)
+	s.ErrorBorder = lipgloss.NewStyle().BorderForeground(t.Error)
 
 	return s
 }

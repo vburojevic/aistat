@@ -32,22 +32,37 @@ func IsEnded(s state.Status) bool {
 	return s == state.StatusEnded || s == state.StatusStale
 }
 
-// StatusDot renders a colored dot for the UI status
-func StatusDot(s state.Status, styles theme.Styles) string {
+// StatusIcon renders a colored icon for the UI status
+// Icons: ▶ running, ⏸ idle, ⚡ needs input, ⏹ ended
+func StatusIcon(s state.Status, styles theme.Styles) string {
+	if IsEnded(s) {
+		return styles.Muted.Render("⏹")
+	}
+
 	ui := ToUIStatus(s)
 	switch ui {
 	case UIStatusNeedsInput:
-		return styles.DotNeedsInput.Render("●")
+		return styles.DotNeedsInput.Render("⚡")
 	case UIStatusActive:
-		return styles.DotActive.Render("●")
+		return styles.DotActive.Render("▶")
 	default:
-		return styles.DotIdle.Render("●")
+		return styles.DotIdle.Render("⏸")
 	}
 }
 
-// StatusDotDimmed renders a dimmed dot for ended sessions
+// StatusIconDimmed renders a dimmed icon for old/ended sessions
+func StatusIconDimmed(styles theme.Styles) string {
+	return styles.Muted.Render("⏹")
+}
+
+// StatusDot renders a colored dot for the UI status (legacy, use StatusIcon)
+func StatusDot(s state.Status, styles theme.Styles) string {
+	return StatusIcon(s, styles)
+}
+
+// StatusDotDimmed renders a dimmed dot for ended sessions (legacy, use StatusIconDimmed)
 func StatusDotDimmed(styles theme.Styles) string {
-	return styles.Muted.Render("●")
+	return StatusIconDimmed(styles)
 }
 
 // ProviderLetter returns a single letter for the provider (subtle indicator)

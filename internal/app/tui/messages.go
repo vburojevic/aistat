@@ -14,3 +14,9 @@ type SessionsMsg struct {
 
 // TickMsg is sent on each refresh tick
 type TickMsg time.Time
+
+// SpinnerTickMsg is sent to animate the spinner
+type SpinnerTickMsg struct{}
+
+// SpinnerFrames are braille spinner characters
+var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}

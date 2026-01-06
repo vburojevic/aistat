@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ type SessionView struct {
 
 	Project string
 	Dir     string
+	Branch  string // Git branch name for worktree identification
 	Model   string
 	Cost    float64
 	Age     time.Duration
@@ -233,6 +235,9 @@ func makeView(r SessionRecord, now time.Time, cfg Config) SessionView {
 		lastAssistant = redactMessageIfNeeded(r.LastAssistantText, cfg.Redact)
 	}
 
+	// Get git branch for worktree identification
+	branch := getBranchName(r.CWD)
+
 	return SessionView{
 		Provider:   r.Provider,
 		ID:         displayID,
@@ -240,6 +245,7 @@ func makeView(r SessionRecord, now time.Time, cfg Config) SessionView {
 		Reason:     reason,
 		Project:    project,
 		Dir:        dir,
+		Branch:     branch,
 		Model:      model,
 		Cost:       r.CostUSD,
 		Age:        age,
@@ -297,6 +303,19 @@ func nonZeroTime(ts ...time.Time) time.Time {
 		}
 	}
 	return time.Now().UTC()
+}
+
+// getBranchName returns the git branch for a directory
+func getBranchName(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func buildDetail(r SessionRecord, status Status, reason string, cfg Config, now time.Time) string {

@@ -51,6 +51,7 @@ type Model struct {
 	sessions         []state.SessionView
 	filteredSessions []state.SessionView
 	cursor           int
+	pinned           map[string]bool // Pinned/bookmarked session IDs
 
 	// Filter
 	filter       textinput.Model
@@ -58,10 +59,11 @@ type Model struct {
 	filterQuery  string
 
 	// UI State
-	showHelp    bool
-	showEnded   bool
-	refreshing  bool
-	err         error
+	showHelp     bool
+	showEnded    bool
+	refreshing   bool
+	spinnerFrame int
+	err          error
 
 	// Theme
 	styles theme.Styles
@@ -83,6 +85,7 @@ func New(cfg Config) *Model {
 		filter:    f,
 		styles:    styles,
 		showEnded: cfg.ShowEnded,
+		pinned:    make(map[string]bool),
 	}
 }
 
@@ -110,6 +113,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TickMsg:
 		cmds = append(cmds, m.fetchSessionsCmd(), m.tickCmd())
+
+	case SpinnerTickMsg:
+		if m.refreshing {
+			m.spinnerFrame = (m.spinnerFrame + 1) % len(SpinnerFrames)
+			cmds = append(cmds, m.spinnerTickCmd())
+		}
 
 	case tea.KeyMsg:
 		cmd := m.handleKeyMsg(msg)
@@ -197,6 +206,13 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.showEnded = !m.showEnded
 		m.applyFilter()
 
+	case "b":
+		// Toggle bookmark/pin on selected session
+		if s := m.selectedSession(); s != nil {
+			m.togglePin(s.ID)
+			m.applyFilter() // Re-sort to move pinned to top
+		}
+
 	case "enter":
 		// No-op for now, selection is just visual
 
@@ -221,8 +237,7 @@ func (m *Model) View() string {
 	var b strings.Builder
 
 	// Header
-	needsInputCount := widgets.NeedsInputCount(m.filteredSessions)
-	b.WriteString(components.RenderHeader(needsInputCount, m.styles, m.width))
+	b.WriteString(components.RenderHeader(m.filteredSessions, m.styles, m.width))
 	b.WriteString("\n")
 
 	// Filter bar
@@ -246,7 +261,7 @@ func (m *Model) View() string {
 	b.WriteString("\n")
 
 	// Footer
-	b.WriteString(components.RenderFooter(m.filterActive, m.refreshing, m.styles, m.width))
+	b.WriteString(components.RenderFooter(m.filterActive, m.refreshing, m.spinnerFrame, SpinnerFrames, m.styles, m.width))
 
 	// Help overlay
 	if m.showHelp {
@@ -264,8 +279,13 @@ func (m *Model) View() string {
 	return b.String()
 }
 
-// renderSessionList renders the session list grouped by project
+// renderSessionList renders the session list grouped by project and branch
 func (m *Model) renderSessionList(width int) string {
+	// Show error state if there was a fetch error
+	if m.err != nil {
+		return components.RenderError(m.err, m.styles)
+	}
+
 	if len(m.filteredSessions) == 0 {
 		if len(m.sessions) == 0 {
 			return components.RenderEmptyState(m.styles)
@@ -275,34 +295,72 @@ func (m *Model) renderSessionList(width int) string {
 
 	var lines []string
 
-	// Group by project
-	groups := m.groupByProject()
+	// Column headers
+	headers := m.renderColumnHeaders()
+	lines = append(lines, headers)
+
+	// Group by project and branch
+	groups := m.groupByProjectAndBranch()
 
 	rowIdx := 0
 	for _, g := range groups {
-		// Project divider
-		divider := m.renderDivider(g.Project, width-4)
+		// Count total sessions in this project
+		projectCount := 0
+		for _, b := range g.Branches {
+			projectCount += len(b.Sessions)
+		}
+
+		// Project divider with count
+		divider := m.renderDivider(g.Project, projectCount, width-4)
 		lines = append(lines, divider)
 
-		// Sessions in this project
-		for _, s := range g.Sessions {
-			row := m.renderSessionRow(s, rowIdx == m.cursor, width-4)
-			lines = append(lines, row)
-			rowIdx++
+		// Branches in this project
+		for _, b := range g.Branches {
+			// Branch sub-header with count
+			branchHeader := m.renderBranchHeader(b.Branch, len(b.Sessions))
+			lines = append(lines, branchHeader)
+
+			// Sessions in this branch
+			for _, s := range b.Sessions {
+				row := m.renderSessionRow(s, rowIdx == m.cursor, width-4)
+				lines = append(lines, row)
+				rowIdx++
+			}
 		}
 	}
 
 	return strings.Join(lines, "\n")
 }
 
-// renderDivider renders a project group divider
-func (m *Model) renderDivider(project string, width int) string {
+// renderColumnHeaders renders the column header row
+func (m *Model) renderColumnHeaders() string {
+	return m.styles.Muted.Render("      MODEL              TIME")
+}
+
+// renderBranchHeader renders a branch sub-header with session count
+func (m *Model) renderBranchHeader(branch string, count int) string {
+	if branch == "" {
+		branch = "unknown"
+	}
+	countStr := ""
+	if count > 0 {
+		countStr = " (" + widgets.FormatInt(count) + ")"
+	}
+	return m.styles.Muted.Render("  ├─ " + branch + countStr)
+}
+
+// renderDivider renders a project group divider with session count
+func (m *Model) renderDivider(project string, count int, width int) string {
 	if project == "" {
 		project = "unknown"
 	}
 
-	// ─────────── project ───────────
-	label := " " + project + " "
+	// ─────────── project (3) ───────────
+	countStr := ""
+	if count > 0 {
+		countStr = " (" + widgets.FormatInt(count) + ")"
+	}
+	label := " " + project + countStr + " "
 	labelLen := len(label)
 	lineLen := (width - labelLen) / 2
 	if lineLen < 3 {
@@ -313,40 +371,149 @@ func (m *Model) renderDivider(project string, width int) string {
 	return m.styles.Divider.Render(line + label + line)
 }
 
-// renderSessionRow renders a single session row
+// renderSessionRow renders a single session row (under a branch header)
 func (m *Model) renderSessionRow(s state.SessionView, selected bool, width int) string {
+	// Indentation for sessions under branch
+	indent := "    "
+
 	// Arrow indicator for selection
 	indicator := "  "
 	if selected {
-		indicator = m.styles.Selected.Render("▶ ")
+		indicator = m.styles.Selected.Render("❯ ")
 	}
 
-	// Status dot
-	var dot string
+	// Pin indicator (★) for bookmarked sessions
+	pinIndicator := " "
+	if m.isPinned(s.ID) {
+		pinIndicator = m.styles.DotNeedsInput.Render("★")
+	}
+
+	// Urgency indicator for needs-input sessions
+	urgency := " "
+	if widgets.ToUIStatus(s.Status) == widgets.UIStatusNeedsInput {
+		urgency = m.styles.DotNeedsInput.Render("⚡")
+	}
+
+	// Status icon (keeps its color regardless of age)
+	var icon string
 	if widgets.IsEnded(s.Status) {
-		dot = widgets.StatusDotDimmed(m.styles)
+		icon = widgets.StatusIconDimmed(m.styles)
 	} else {
-		dot = widgets.StatusDot(s.Status, m.styles)
+		icon = widgets.StatusIcon(s.Status, m.styles)
 	}
 
-	// Project name (truncated)
-	project := widgets.TruncateString(s.Project, 20)
-	if project == "" {
-		project = "unknown"
+	// Model name (truncated) with model-specific color
+	model := widgets.TruncateString(s.Model, 16)
+	if model == "" {
+		model = "unknown"
+	}
+	modelStyle := m.modelStyle(s.Model, s.Age)
+	modelText := modelStyle.Render(widgets.PadRight(model, 16))
+
+	// Status-aware age display with status-specific color
+	statusAge := m.formatStatusAgeStyled(s)
+
+	// Build row content: indent + indicator + pin + urgency + icon + model + status-age
+	rowContent := indent + indicator + pinIndicator + urgency + icon + " " + modelText + " " + statusAge
+
+	// Apply background highlight for selected row
+	if selected {
+		return m.styles.RowSelected.Width(width).Render(rowContent)
 	}
 
-	// Age
+	return rowContent
+}
+
+// modelStyle returns the appropriate style for a model name with age fading
+func (m *Model) modelStyle(model string, age time.Duration) lipgloss.Style {
+	modelLower := strings.ToLower(model)
+
+	// Get base color from model
+	var baseStyle lipgloss.Style
+	switch {
+	case strings.Contains(modelLower, "opus"):
+		baseStyle = m.styles.ModelOpus
+	case strings.Contains(modelLower, "sonnet"):
+		baseStyle = m.styles.ModelSonnet
+	case strings.Contains(modelLower, "haiku"):
+		baseStyle = m.styles.ModelHaiku
+	default:
+		// Use age-based dimming for unknown models
+		return m.ageTextStyle(age)
+	}
+
+	// Apply age-based dimming to the model color
+	if age >= 24*time.Hour {
+		return m.styles.RowDim40
+	} else if age >= 6*time.Hour {
+		return m.styles.RowDim60
+	} else if age >= 1*time.Hour {
+		return m.styles.RowDim80
+	}
+	return baseStyle
+}
+
+// formatStatusAgeStyled returns status-aware age with color styling
+func (m *Model) formatStatusAgeStyled(s state.SessionView) string {
+	age := widgets.FormatAge(s.Age)
+	var text string
+	var style lipgloss.Style
+
+	switch {
+	case s.Status == state.StatusRunning:
+		text = "running " + age
+		style = m.styles.StatusRunning
+	case s.Status == state.StatusApproval || s.Status == state.StatusNeedsAttn:
+		text = "waiting " + age
+		style = m.styles.StatusWaiting
+	case widgets.IsEnded(s.Status):
+		text = "ended " + age + " ago"
+		style = m.styles.StatusEnded
+	default:
+		text = "idle " + age
+		style = m.styles.StatusIdle
+	}
+
+	// Apply age-based dimming for older sessions
+	if s.Age >= 24*time.Hour {
+		style = m.styles.RowDim40
+	} else if s.Age >= 6*time.Hour {
+		style = m.styles.RowDim60
+	} else if s.Age >= 1*time.Hour {
+		style = m.styles.RowDim80
+	}
+
+	return style.Render(widgets.PadLeft(text, 15))
+}
+
+// formatStatusAge returns age with status context (e.g., "running 2m", "idle 15m")
+func formatStatusAge(s state.SessionView) string {
 	age := widgets.FormatAge(s.Age)
 
-	// Build row
-	row := indicator + dot + " " + widgets.PadRight(project, 20) + "  " + widgets.PadLeft(age, 6)
-
-	// Apply dimming for ended sessions
-	if widgets.IsEnded(s.Status) {
-		row = m.styles.RowDim.Render(row)
+	switch {
+	case s.Status == state.StatusRunning:
+		return "running " + age
+	case s.Status == state.StatusApproval || s.Status == state.StatusNeedsAttn:
+		return "waiting " + age
+	case widgets.IsEnded(s.Status):
+		return "ended " + age + " ago"
+	default:
+		return "idle " + age
 	}
+}
 
-	return row
+// ageTextStyle returns a style based on session age for fade effect
+func (m *Model) ageTextStyle(age time.Duration) lipgloss.Style {
+	switch {
+	case age < 1*time.Hour:
+		return m.styles.Row
+	case age < 6*time.Hour:
+		return m.styles.RowDim80
+	case age < 24*time.Hour:
+		return m.styles.RowDim60
+	default:
+		return m.styles.RowDim40
+	}
 }
 
 // Helper methods
@@ -357,10 +524,17 @@ func (m *Model) fetchSessionsCmd() tea.Cmd {
 	}
 	m.refreshing = true
 	fetcher := m.sessionFetcher
-	return func() tea.Msg {
-		sessions, err := fetcher()
-		return SessionsMsg{Sessions: sessions, Err: err}
-	}
+	return tea.Batch(
+		func() tea.Msg {
+			sessions, err := fetcher()
+			return SessionsMsg{Sessions: sessions, Err: err}
+		},
+		m.spinnerTickCmd(),
+	)
+}
+
+func (m *Model) spinnerTickCmd() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return SpinnerTickMsg{} })
 }
 
 func (m *Model) tickCmd() tea.Cmd {
@@ -387,12 +561,67 @@ func (m *Model) moveCursor(delta int) {
 	}
 }
 
+func (m *Model) togglePin(id string) {
+	// Strip ANSI codes from ID for consistent key
+	cleanID := stripANSI(id)
+	if m.pinned[cleanID] {
+		delete(m.pinned, cleanID)
+	} else {
+		m.pinned[cleanID] = true
+	}
+}
+
+func (m *Model) isPinned(id string) bool {
+	return m.pinned[stripANSI(id)]
+}
+
+func (m *Model) applyPinnedFirst(list []state.SessionView) []state.SessionView {
+	if len(m.pinned) == 0 {
+		return list
+	}
+	pinned := make([]state.SessionView, 0, len(list))
+	rest := make([]state.SessionView, 0, len(list))
+	for _, sess := range list {
+		if m.isPinned(sess.ID) {
+			pinned = append(pinned, sess)
+		} else {
+			rest = append(rest, sess)
+		}
+	}
+	return append(pinned, rest...)
+}
+
+// stripANSI removes ANSI escape codes from a string
+func stripANSI(s string) string {
+	result := strings.Builder{}
+	inEscape := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if r == 'm' {
+				inEscape = false
+			}
+			continue
+		}
+		result.WriteRune(r)
+	}
+	return result.String()
+}
+
 func (m *Model) applyFilter() {
 	filtered := make([]state.SessionView, 0, len(m.sessions))
+	recentWindow := 24 * time.Hour
 
 	for _, s := range m.sessions {
-		// Hide ended/stale unless showEnded is true
-		if !m.showEnded && widgets.IsEnded(s.Status) {
+		// Recent sessions (last 24h) are always shown
+		// Older ended sessions are hidden unless showEnded is true
+		isRecent := s.Age < recentWindow
+		isEnded := widgets.IsEnded(s.Status)
+
+		if !isRecent && isEnded && !m.showEnded {
 			continue
 		}
 
@@ -421,7 +650,8 @@ func (m *Model) applyFilter() {
 	// Sort: needs input first, then active, then idle, then by recency
 	sortByUrgency(filtered)
 
-	m.filteredSessions = filtered
+	// Move pinned sessions to the top
+	m.filteredSessions = m.applyPinnedFirst(filtered)
 
 	// Adjust cursor if out of bounds
 	if m.cursor >= len(filtered) {
@@ -432,29 +662,59 @@ func (m *Model) applyFilter() {
 	}
 }
 
-type projectGroup struct {
-	Project  string
+type branchGroup struct {
+	Branch   string
 	Sessions []state.SessionView
 }
 
-func (m *Model) groupByProject() []projectGroup {
-	groups := make(map[string][]state.SessionView)
-	order := []string{}
+type projectGroup struct {
+	Project  string
+	Branches []branchGroup
+}
+
+func (m *Model) groupByProjectAndBranch() []projectGroup {
+	// First level: group by project
+	projectOrder := []string{}
+	projectMap := make(map[string]map[string][]state.SessionView) // project -> branch -> sessions
 
 	for _, s := range m.filteredSessions {
 		proj := s.Project
 		if proj == "" {
-			proj = ""
+			proj = "unknown"
 		}
-		if _, ok := groups[proj]; !ok {
-			order = append(order, proj)
+		branch := s.Branch
+		if branch == "" {
+			branch = "unknown"
 		}
-		groups[proj] = append(groups[proj], s)
+
+		if _, ok := projectMap[proj]; !ok {
+			projectOrder = append(projectOrder, proj)
+			projectMap[proj] = make(map[string][]state.SessionView)
+		}
+		projectMap[proj][branch] = append(projectMap[proj][branch], s)
 	}
 
-	result := make([]projectGroup, 0, len(order))
-	for _, p := range order {
-		result = append(result, projectGroup{Project: p, Sessions: groups[p]})
+	// Build result with branch ordering preserved
+	result := make([]projectGroup, 0, len(projectOrder))
+	for _, proj := range projectOrder {
+		branches := projectMap[proj]
+		branchOrder := []string{}
+		for branch := range branches {
+			branchOrder = append(branchOrder, branch)
+		}
+
+		branchGroups := make([]branchGroup, 0, len(branchOrder))
+		for _, branch := range branchOrder {
+			branchGroups = append(branchGroups, branchGroup{
+				Branch:   branch,
+				Sessions: branches[branch],
+			})
+		}
+
+		result = append(result, projectGroup{
+			Project:  proj,
+			Branches: branchGroups,
+		})
 	}
 	return result
 }

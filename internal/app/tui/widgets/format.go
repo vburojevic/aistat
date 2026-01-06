@@ -142,3 +142,8 @@ func Safe(values ...string) string {
 	}
 	return ""
 }
+
+// FormatInt formats an integer as a string
+func FormatInt(n int) string {
+	return fmt.Sprintf("%d", n)
+}

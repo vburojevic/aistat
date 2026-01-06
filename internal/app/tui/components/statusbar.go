@@ -16,8 +16,8 @@ type Shortcut struct {
 // MainShortcuts - the ~10 essential shortcuts for normal mode
 var MainShortcuts = []Shortcut{
 	{"j/k", "navigate"},
-	{"enter", "select"},
 	{"/", "filter"},
+	{"b", "bookmark"},
 	{"?", "help"},
 	{"q", "quit"},
 }
@@ -28,8 +28,8 @@ var FilterShortcuts = []Shortcut{
 	{"enter", "apply"},
 }
 
-// RenderFooter renders the context-aware footer with shortcuts
-func RenderFooter(filterActive bool, refreshing bool, styles theme.Styles, width int) string {
+// RenderFooter renders the context-aware footer with shortcuts and icon legend
+func RenderFooter(filterActive bool, refreshing bool, spinnerFrame int, spinnerFrames []string, styles theme.Styles, width int) string {
 	var shortcuts []Shortcut
 	if filterActive {
 		shortcuts = FilterShortcuts
@@ -37,33 +37,46 @@ func RenderFooter(filterActive bool, refreshing bool, styles theme.Styles, width
 		shortcuts = MainShortcuts
 	}
 
-	// Build shortcut string
+	// Build shortcut string with fixed-width key column
+	keyStyle := lipgloss.NewStyle().
+		Foreground(styles.HelpKey.GetForeground()).
+		Width(6).
+		Align(lipgloss.Right)
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(styles.Muted.GetForeground())
+
 	var parts []string
 	for _, s := range shortcuts {
-		parts = append(parts, styles.HelpKey.Render(s.Key)+" "+s.Desc)
+		part := keyStyle.Render(s.Key) + " " + descStyle.Render(s.Desc)
+		parts = append(parts, part)
 	}
-	shortcutStr := strings.Join(parts, "  ")
+	shortcutStr := strings.Join(parts, "   ")
 
-	// Add refresh indicator on right
+	// Icon legend: ▶run ⏸idle ⚡input
+	legend := styles.DotActive.Render("▶") + descStyle.Render("run") + " " +
+		styles.DotIdle.Render("⏸") + descStyle.Render("idle") + " " +
+		styles.DotNeedsInput.Render("⚡") + descStyle.Render("input")
+
+	// Add animated spinner indicator
 	var indicator string
-	if refreshing {
-		indicator = styles.Muted.Render("↻")
+	if refreshing && len(spinnerFrames) > 0 {
+		frame := spinnerFrame % len(spinnerFrames)
+		indicator = " " + styles.DotActive.Render(spinnerFrames[frame])
 	}
 
-	if indicator == "" {
+	// Calculate remaining space and right-align legend + indicator
+	leftContent := shortcutStr
+	rightContent := legend + indicator
+
+	contentWidth := lipgloss.Width(leftContent) + lipgloss.Width(rightContent)
+	if contentWidth >= width-4 {
 		return styles.Footer.Width(width).Render(shortcutStr)
 	}
 
-	// Layout with indicator on right
-	scWidth := lipgloss.Width(shortcutStr)
-	indWidth := lipgloss.Width(indicator)
-	gap := width - scWidth - indWidth - 4
+	gap := width - contentWidth - 4
+	spacer := strings.Repeat(" ", gap)
+	row := leftContent + spacer + rightContent
 
-	if gap < 1 {
-		return styles.Footer.Width(width).Render(shortcutStr)
-	}
-
-	spacer := lipgloss.NewStyle().Width(gap).Render("")
-	row := lipgloss.JoinHorizontal(lipgloss.Center, shortcutStr, spacer, indicator)
 	return styles.Footer.Width(width).Render(row)
 }
