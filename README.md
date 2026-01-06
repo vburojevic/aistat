@@ -186,6 +186,8 @@ Auto-fix setup (same behavior as install):
 aistat doctor --fix --force
 ```
 
+`doctor --fix` prompts in a TTY and snapshots configs; if an error occurs it restores the backups.
+
 ## Configuration
 
 `aistat` reads a JSON config file from:
