@@ -221,10 +221,10 @@ func (v *DashboardView) renderProjectCard(it state.ProjectItem, selected, active
 	// Build badge line (only urgent states)
 	var badges []string
 	if n := it.StatusCount[state.StatusApproval]; n > 0 {
-		badges = append(badges, widgets.StatusChipHuman(state.StatusApproval, n, v.styles))
+		badges = append(badges, widgets.StatusChip(state.StatusApproval, n, v.styles))
 	}
 	if n := it.StatusCount[state.StatusNeedsAttn]; n > 0 {
-		badges = append(badges, widgets.StatusChipHuman(state.StatusNeedsAttn, n, v.styles))
+		badges = append(badges, widgets.StatusChip(state.StatusNeedsAttn, n, v.styles))
 	}
 
 	// Build summary line for non-urgent counts

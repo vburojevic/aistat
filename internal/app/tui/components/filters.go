@@ -69,15 +69,15 @@ func RenderActiveFilters(filters *state.FilterState, selectedCount int, styles t
 
 // RenderLegend renders the status legend with counts
 func RenderLegend(counts map[state.Status]int, total int, cost float64, viewMode, sortBy, groupBy, themeName string, styles theme.Styles) string {
-	// Status badges with counts
+	// Status badges with counts - compact format for legend
 	statusLine := strings.Join([]string{
-		fmt.Sprintf("%s %d", widgets.StatusBadgeCompact(state.StatusRunning, styles), counts[state.StatusRunning]),
-		fmt.Sprintf("%s %d", widgets.StatusBadgeCompact(state.StatusWaiting, styles), counts[state.StatusWaiting]),
-		fmt.Sprintf("%s %d", widgets.StatusBadgeCompact(state.StatusApproval, styles), counts[state.StatusApproval]),
-		fmt.Sprintf("%s %d", widgets.StatusBadgeCompact(state.StatusNeedsAttn, styles), counts[state.StatusNeedsAttn]),
-		fmt.Sprintf("%s %d", widgets.StatusBadgeCompact(state.StatusStale, styles), counts[state.StatusStale]),
-		fmt.Sprintf("%s %d", widgets.StatusBadgeCompact(state.StatusEnded, styles), counts[state.StatusEnded]),
-	}, "  ")
+		fmt.Sprintf("▶%d", counts[state.StatusRunning]),
+		fmt.Sprintf("⏸%d", counts[state.StatusWaiting]),
+		fmt.Sprintf("👋%d", counts[state.StatusApproval]),
+		fmt.Sprintf("🚨%d", counts[state.StatusNeedsAttn]),
+		fmt.Sprintf("💤%d", counts[state.StatusStale]),
+		fmt.Sprintf("✓%d", counts[state.StatusEnded]),
+	}, " ")
 
 	// Metadata
 	group := groupBy

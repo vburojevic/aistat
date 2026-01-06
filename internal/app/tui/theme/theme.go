@@ -1,6 +1,11 @@
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"os"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Theme defines a complete color scheme for the TUI
 type Theme struct {
@@ -137,4 +142,64 @@ func ThemeByName(name string) Theme {
 		}
 	}
 	return Mocha
+}
+
+// DetectTheme auto-detects terminal theme (light/dark) from environment
+// Uses common environment variables to determine if terminal is light or dark mode
+func DetectTheme() Theme {
+	// Check COLORFGBG (format: "fg;bg" where bg > 7 usually means dark)
+	if colorfgbg := os.Getenv("COLORFGBG"); colorfgbg != "" {
+		parts := strings.Split(colorfgbg, ";")
+		if len(parts) >= 2 {
+			bg := parts[len(parts)-1]
+			// Background color 0-7 typically means light, 8+ means dark
+			// 15 (white) also means light
+			if bg == "15" || (bg >= "0" && bg <= "7" && bg != "0") {
+				return Latte
+			}
+		}
+	}
+
+	// Check for macOS dark mode via TERM_PROGRAM_VERSION and appearance
+	if os.Getenv("TERM_PROGRAM") == "Apple_Terminal" || os.Getenv("TERM_PROGRAM") == "iTerm.app" {
+		// Apple Terminal and iTerm don't expose appearance directly,
+		// but we can check for common indicators
+		if colorterm := os.Getenv("COLORTERM"); colorterm != "" {
+			// If COLORTERM is set, assume modern terminal with dark mode
+			// (most developers use dark mode)
+		}
+	}
+
+	// Check for explicit theme preference
+	if theme := os.Getenv("AISTAT_THEME"); theme != "" {
+		return ThemeByName(strings.ToLower(theme))
+	}
+
+	// Check for NO_COLOR preference
+	if os.Getenv("NO_COLOR") != "" {
+		// Return a theme but the app should also check accessible mode
+		return Mocha
+	}
+
+	// Check for light terminal indicators
+	// Warp terminal and some others set this
+	if appearance := os.Getenv("TERMINAL_EMULATOR_APPEARANCE"); appearance != "" {
+		if strings.Contains(strings.ToLower(appearance), "light") {
+			return Latte
+		}
+	}
+
+	// Default to dark theme (Mocha) - most developers use dark mode
+	return Mocha
+}
+
+// DetectThemeIndex returns the index of the detected theme in Themes slice
+func DetectThemeIndex() int {
+	detected := DetectTheme()
+	for i, t := range Themes {
+		if t.Name == detected.Name {
+			return i
+		}
+	}
+	return 0 // Mocha
 }

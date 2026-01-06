@@ -106,8 +106,9 @@ type Model struct {
 
 // New creates a new TUI model
 func New(cfg Config) *Model {
-	// Initialize theme
-	th := theme.Mocha
+	// Auto-detect theme based on terminal environment
+	th := theme.DetectTheme()
+	themeIdx := theme.DetectThemeIndex()
 	s := theme.NewStyles(th, false)
 
 	// Initialize filter input
@@ -124,8 +125,8 @@ func New(cfg Config) *Model {
 	pal.CharLimit = 128
 	pal.Width = 50
 
-	// Initialize table
-	cols, idCol := columnsFor(120, ColumnModeFull, false)
+	// Initialize table with compact columns (essential info)
+	cols, idCol := columnsFor(120, ColumnModeCompact, false)
 	tbl := table.New(
 		table.WithColumns(cols),
 		table.WithFocused(true),
@@ -157,15 +158,20 @@ func New(cfg Config) *Model {
 		filters:     filters,
 		viewMode:    ViewDashboard, // Dashboard-first!
 		detailMode:  DetailSplit,
-		columnMode:  ColumnModeFull,
+		columnMode:  ColumnModeCompact, // Essential columns by default
 		showLastCol: false,
 		showSidebar: true,
 		showBanner:  false,
 		theme:       th,
 		styles:      s,
-		themeIndex:  0,
+		themeIndex:  themeIdx, // Auto-detected
 		accessible:  false,
 		idColumn:    idCol,
+	}
+
+	// Set default grouping to project
+	if m.cfg.GroupBy == "" {
+		m.cfg.GroupBy = "project"
 	}
 
 	// Initialize views
@@ -505,35 +511,18 @@ func (m *Model) handleSessionListKeys(msg tea.KeyMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// renderNeedsInputBanner returns a banner showing urgent session count
-func (m *Model) renderNeedsInputBanner() string {
-	appr := m.appState.FilterCounts[state.StatusApproval]
-	attn := m.appState.FilterCounts[state.StatusNeedsAttn]
-	total := appr + attn
-
-	if total == 0 {
-		return ""
-	}
-
-	banner := fmt.Sprintf("🚨 %d agent", total)
-	if total > 1 {
-		banner += "s"
-	}
-	banner += " need your input!"
-
-	return m.styles.BadgeAttn.Render(banner)
-}
-
 // View renders the UI
 func (m *Model) View() string {
 	var b strings.Builder
 
-	// Header
+	// Header with urgent count
+	urgentCount := m.appState.FilterCounts[state.StatusApproval] + m.appState.FilterCounts[state.StatusNeedsAttn]
 	headerCfg := components.HeaderConfig{
 		RefreshInterval: m.cfg.RefreshEvery,
 		ActiveWindow:    m.cfg.ActiveWindow,
 		Redact:          m.cfg.Redact,
 		ThemeName:       m.theme.Name,
+		UrgentCount:     urgentCount,
 	}
 	b.WriteString(components.RenderHeader(m.styles, headerCfg, m.width))
 	b.WriteString("\n")
@@ -609,13 +598,7 @@ func (m *Model) View() string {
 		if m.appState.FilterTotal == 0 {
 			listContent = components.RenderEmptyState(len(m.appState.AllSessions) > 0, m.filter.Value(), m.styles)
 		} else {
-			// Show "needs input" banner if there are urgent sessions
-			banner := m.renderNeedsInputBanner()
-			if banner != "" {
-				listContent = banner + "\n\n" + m.table.View()
-			} else {
-				listContent = m.table.View()
-			}
+			listContent = m.table.View()
 		}
 
 		// Add sidebar
@@ -907,17 +890,17 @@ func (m *Model) rowForSession(s *state.SessionView) table.Row {
 	}
 
 	prefix := m.prefixForSession(*s)
-	status := widgets.StatusBadgeHuman(s.Status, m.styles)
+	status := widgets.StatusBadge(s.Status, m.styles)
 	age := widgets.FormatAgo(s.Age)
 	cost := widgets.FormatCost(s.Cost)
 	since := widgets.FormatSince(s.LastSeen)
 	mode := m.effectiveMode
 
-	// Build reason column for urgent states
+	// Build reason column - show reason for urgent states, else dash
 	reason := "-"
 	if s.Status == state.StatusApproval || s.Status == state.StatusNeedsAttn {
 		if s.Reason != "" {
-			reason = widgets.TruncateString(s.Reason, 22)
+			reason = widgets.TruncateString(s.Reason, 30)
 		}
 	}
 
@@ -925,14 +908,14 @@ func (m *Model) rowForSession(s *state.SessionView) table.Row {
 		return table.Row{m.renderCard(*s)}
 	}
 
-	if mode == ColumnModeUltra || m.width < 80 {
-		return table.Row{prefix, status, s.Project, age}
-	}
-
+	// Essential 5-column layout: icon, status, project, age, reason
+	// Used for Compact, Ultra, or when width < 100
 	if mode != ColumnModeFull || m.width < 100 {
-		return table.Row{prefix, status, s.Project, age, cost, id, reason}
+		project := widgets.TruncateString(s.Project, 18)
+		return table.Row{prefix, status, project, age, reason}
 	}
 
+	// Full mode - all columns for power users
 	row := table.Row{prefix, status, s.Project, age, cost, id, s.Model, s.Dir, since, reason}
 	if m.showLastCol {
 		row = append(row, lastSnippet(*s))
@@ -965,7 +948,7 @@ func (m *Model) prefixForSession(s state.SessionView) string {
 	if selected {
 		box = "●"
 	}
-	icon := widgets.ProviderIconEmoji(s.Provider)
+	icon := widgets.ProviderIcon(s.Provider)
 	if m.appState.IsRecentlyChanged(idKey, m.cfg.RefreshEvery) {
 		icon = m.styles.Changed.Render(icon)
 	}
@@ -973,8 +956,8 @@ func (m *Model) prefixForSession(s state.SessionView) string {
 }
 
 func (m *Model) renderCard(s state.SessionView) string {
-	status := chip(widgets.StatusIcon(s.Status)+" "+strings.ToUpper(string(s.Status)), m.theme.Accent, m.theme.Crust)
-	provider := chip(strings.ToUpper(string(s.Provider)), m.theme.Accent, m.theme.Crust)
+	status := widgets.StatusBadge(s.Status, m.styles)
+	provider := widgets.ProviderBadge(s.Provider, m.styles)
 	project := s.Project
 	if project == "" {
 		project = "unknown"
@@ -1128,31 +1111,32 @@ func columnsFor(width int, mode ColumnMode, showLast bool) ([]table.Column, int)
 		return []table.Column{{Title: "SESSION", Width: widgets.MaxInt(20, width-4)}}, 0
 	}
 
-	if mode == ColumnModeUltra || width < 80 {
+	// Essential 4 columns (default) - STATUS, PROJECT, AGE, REASON
+	// This is the user-preferred layout: human-readable, essential info only
+	if mode == ColumnModeUltra || mode == ColumnModeCompact || width < 100 {
+		// Calculate widths based on available space
+		statusW := 14 // Fits "👋 NEED YOU"
+		projectW := widgets.MinInt(20, widgets.MaxInt(12, (width-statusW-8-24)/2))
+		reasonW := widgets.MaxInt(20, width-statusW-projectW-8-4) // Remaining space
+
 		cols := []table.Column{
-			{Title: " ", Width: 4},
-			{Title: "STATUS", Width: 14}, // Wider for "👋 NEEDS YOU"
-			{Title: "PROJECT", Width: 18},
-			{Title: "AGE", Width: 5},
+			{Title: " ", Width: 4}, // Icon column (pin/select/provider)
+			{Title: "STATUS", Width: statusW},
+			{Title: "PROJECT", Width: projectW},
+			{Title: "AGE", Width: 6},
+			{Title: "REASON", Width: reasonW},
 		}
 		return cols, 2
 	}
 
-	compact := mode != ColumnModeFull || width < 100
-
+	// Full mode - all columns for power users
 	iconCol := table.Column{Title: " ", Width: 4}
-	statusCol := table.Column{Title: "STATUS", Width: 14} // Wider for "👋 NEEDS YOU"
+	statusCol := table.Column{Title: "STATUS", Width: 14}
 	projectCol := table.Column{Title: "PROJECT", Width: 16}
-	ageCol := table.Column{Title: "AGE", Width: 5}
+	ageCol := table.Column{Title: "AGE", Width: 6}
 	costCol := table.Column{Title: "COST", Width: 8}
 	idCol := table.Column{Title: "ID", Width: 12}
 	reasonCol := table.Column{Title: "REASON", Width: 24}
-
-	if compact {
-		cols := []table.Column{iconCol, statusCol, projectCol, ageCol, costCol, idCol, reasonCol}
-		return cols, 2
-	}
-
 	modelCol := table.Column{Title: "MODEL", Width: 12}
 	sinceCol := table.Column{Title: "SINCE", Width: 12}
 	dirCol := table.Column{Title: "DIR", Width: 20}

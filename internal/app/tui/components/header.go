@@ -14,28 +14,51 @@ type HeaderConfig struct {
 	ActiveWindow    time.Duration
 	Redact          bool
 	ThemeName       string
+	UrgentCount     int // Count of sessions needing input (approval + attention)
 }
 
-// RenderHeader renders the application header
+// RenderHeader renders the application header with urgent notification
 func RenderHeader(styles theme.Styles, cfg HeaderConfig, width int) string {
 	title := styles.Title.Render("◆ aistat")
 
-	meta := styles.Muted.Render(fmt.Sprintf("refresh %s • window %s • redact %v • theme %s",
-		cfg.RefreshInterval, cfg.ActiveWindow, cfg.Redact, cfg.ThemeName))
+	// Urgent badge (if any sessions need input)
+	var urgentBadge string
+	if cfg.UrgentCount > 0 {
+		urgentBadge = styles.BadgeAttn.Render(fmt.Sprintf("🚨 %d need input", cfg.UrgentCount))
+	}
+
+	// Meta info - simplified
+	meta := styles.Muted.Render(fmt.Sprintf("↻ %s • %s", cfg.RefreshInterval, cfg.ThemeName))
 
 	// Calculate spacing
 	titleWidth := lipgloss.Width(title)
+	urgentWidth := lipgloss.Width(urgentBadge)
 	metaWidth := lipgloss.Width(meta)
-	gap := width - titleWidth - metaWidth - 4
+	totalContent := titleWidth + urgentWidth + metaWidth
+	if urgentWidth > 0 {
+		totalContent += 4 // Extra spacing around urgent badge
+	}
+	gap := width - totalContent - 4
 
 	if gap < 1 {
 		// Narrow mode - stack vertically
-		return lipgloss.JoinVertical(lipgloss.Left, title, meta)
+		parts := []string{title}
+		if urgentBadge != "" {
+			parts = append(parts, urgentBadge)
+		}
+		parts = append(parts, meta)
+		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 	}
 
-	// Wide mode - side by side
+	// Wide mode - side by side with urgent badge prominent
+	var parts []string
+	parts = append(parts, title)
+	if urgentBadge != "" {
+		parts = append(parts, "  "+urgentBadge)
+	}
 	spacer := lipgloss.NewStyle().Width(gap).Render("")
-	return lipgloss.JoinHorizontal(lipgloss.Center, title, spacer, meta)
+	parts = append(parts, spacer, meta)
+	return lipgloss.JoinHorizontal(lipgloss.Center, parts...)
 }
 
 // RenderTitleOnly renders just the title
