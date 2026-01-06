@@ -505,6 +505,25 @@ func (m *Model) handleSessionListKeys(msg tea.KeyMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// renderNeedsInputBanner returns a banner showing urgent session count
+func (m *Model) renderNeedsInputBanner() string {
+	appr := m.appState.FilterCounts[state.StatusApproval]
+	attn := m.appState.FilterCounts[state.StatusNeedsAttn]
+	total := appr + attn
+
+	if total == 0 {
+		return ""
+	}
+
+	banner := fmt.Sprintf("🚨 %d agent", total)
+	if total > 1 {
+		banner += "s"
+	}
+	banner += " need your input!"
+
+	return m.styles.BadgeAttn.Render(banner)
+}
+
 // View renders the UI
 func (m *Model) View() string {
 	var b strings.Builder
@@ -590,7 +609,13 @@ func (m *Model) View() string {
 		if m.appState.FilterTotal == 0 {
 			listContent = components.RenderEmptyState(len(m.appState.AllSessions) > 0, m.filter.Value(), m.styles)
 		} else {
-			listContent = m.table.View()
+			// Show "needs input" banner if there are urgent sessions
+			banner := m.renderNeedsInputBanner()
+			if banner != "" {
+				listContent = banner + "\n\n" + m.table.View()
+			} else {
+				listContent = m.table.View()
+			}
 		}
 
 		// Add sidebar
@@ -882,11 +907,19 @@ func (m *Model) rowForSession(s *state.SessionView) table.Row {
 	}
 
 	prefix := m.prefixForSession(*s)
-	status := widgets.StatusBadge(s.Status, m.styles)
+	status := widgets.StatusBadgeHuman(s.Status, m.styles)
 	age := widgets.FormatAgo(s.Age)
 	cost := widgets.FormatCost(s.Cost)
 	since := widgets.FormatSince(s.LastSeen)
 	mode := m.effectiveMode
+
+	// Build reason column for urgent states
+	reason := "-"
+	if s.Status == state.StatusApproval || s.Status == state.StatusNeedsAttn {
+		if s.Reason != "" {
+			reason = widgets.TruncateString(s.Reason, 22)
+		}
+	}
 
 	if mode == ColumnModeCard {
 		return table.Row{m.renderCard(*s)}
@@ -897,10 +930,10 @@ func (m *Model) rowForSession(s *state.SessionView) table.Row {
 	}
 
 	if mode != ColumnModeFull || m.width < 100 {
-		return table.Row{prefix, status, s.Project, age, cost, id}
+		return table.Row{prefix, status, s.Project, age, cost, id, reason}
 	}
 
-	row := table.Row{prefix, status, s.Project, age, cost, id, s.Model, s.Dir, since}
+	row := table.Row{prefix, status, s.Project, age, cost, id, s.Model, s.Dir, since, reason}
 	if m.showLastCol {
 		row = append(row, lastSnippet(*s))
 	}
@@ -1098,7 +1131,7 @@ func columnsFor(width int, mode ColumnMode, showLast bool) ([]table.Column, int)
 	if mode == ColumnModeUltra || width < 80 {
 		cols := []table.Column{
 			{Title: " ", Width: 4},
-			{Title: "STATUS", Width: 8},
+			{Title: "STATUS", Width: 14}, // Wider for "👋 NEEDS YOU"
 			{Title: "PROJECT", Width: 18},
 			{Title: "AGE", Width: 5},
 		}
@@ -1108,22 +1141,23 @@ func columnsFor(width int, mode ColumnMode, showLast bool) ([]table.Column, int)
 	compact := mode != ColumnModeFull || width < 100
 
 	iconCol := table.Column{Title: " ", Width: 4}
-	statusCol := table.Column{Title: "STATUS", Width: 8}
-	projectCol := table.Column{Title: "PROJECT", Width: 18}
+	statusCol := table.Column{Title: "STATUS", Width: 14} // Wider for "👋 NEEDS YOU"
+	projectCol := table.Column{Title: "PROJECT", Width: 16}
 	ageCol := table.Column{Title: "AGE", Width: 5}
 	costCol := table.Column{Title: "COST", Width: 8}
-	idCol := table.Column{Title: "ID", Width: 14}
+	idCol := table.Column{Title: "ID", Width: 12}
+	reasonCol := table.Column{Title: "REASON", Width: 24}
 
 	if compact {
-		cols := []table.Column{iconCol, statusCol, projectCol, ageCol, costCol, idCol}
+		cols := []table.Column{iconCol, statusCol, projectCol, ageCol, costCol, idCol, reasonCol}
 		return cols, 2
 	}
 
 	modelCol := table.Column{Title: "MODEL", Width: 12}
-	sinceCol := table.Column{Title: "SINCE", Width: 14}
-	dirCol := table.Column{Title: "DIR", Width: 26}
+	sinceCol := table.Column{Title: "SINCE", Width: 12}
+	dirCol := table.Column{Title: "DIR", Width: 20}
 
-	cols := []table.Column{iconCol, statusCol, projectCol, ageCol, costCol, idCol, modelCol, dirCol, sinceCol}
+	cols := []table.Column{iconCol, statusCol, projectCol, ageCol, costCol, idCol, modelCol, dirCol, sinceCol, reasonCol}
 	idIndex := 2
 	if showLast {
 		lastCol := table.Column{Title: "LAST", Width: 20}

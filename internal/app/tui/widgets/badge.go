@@ -1,6 +1,8 @@
 package widgets
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vburojevic/aistat/internal/app/tui/state"
 	"github.com/vburojevic/aistat/internal/app/tui/theme"
@@ -176,4 +178,38 @@ func ProviderBadge(p state.Provider, styles theme.Styles) string {
 		style = styles.Muted
 	}
 	return style.Render(icon)
+}
+
+// StatusChipHuman returns a human-readable status chip for urgent states
+// Used in dashboard cards to show only action-needed statuses
+func StatusChipHuman(s state.Status, count int, styles theme.Styles) string {
+	switch s {
+	case state.StatusApproval:
+		return styles.BadgeAppr.Render(fmt.Sprintf("👋 %d NEEDS YOU", count))
+	case state.StatusNeedsAttn:
+		return styles.BadgeAttn.Render(fmt.Sprintf("🚨 %d URGENT", count))
+	default:
+		return ""
+	}
+}
+
+// StatusBadgeHuman returns a human-readable status badge for table rows
+// Used in session list for clear status indication
+func StatusBadgeHuman(s state.Status, styles theme.Styles) string {
+	switch s {
+	case state.StatusRunning:
+		return styles.BadgeRun.Render("▶ ACTIVE")
+	case state.StatusWaiting:
+		return styles.BadgeWait.Render("⏸ IDLE")
+	case state.StatusApproval:
+		return styles.BadgeAppr.Render("👋 NEEDS YOU")
+	case state.StatusNeedsAttn:
+		return styles.BadgeAttn.Render("🚨 URGENT")
+	case state.StatusStale:
+		return styles.BadgeStale.Render("💤 STALE")
+	case state.StatusEnded:
+		return styles.BadgeEnded.Render("✓ DONE")
+	default:
+		return styles.BadgeWait.Render("? UNKNOWN")
+	}
 }

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/vburojevic/aistat/internal/app/tui/state"
 	"github.com/vburojevic/aistat/internal/app/tui/theme"
 	"github.com/vburojevic/aistat/internal/app/tui/widgets"
@@ -101,7 +100,7 @@ func (v *DashboardView) Render(sessions []state.SessionView, counts map[state.St
 
 	// Title
 	lines = append(lines, v.styles.Section.Render("◆ Dashboard"))
-	lines = append(lines, v.styles.Muted.Render("tab back • enter focus • space toggle • a clear"))
+	lines = append(lines, v.styles.Muted.Render("tab list • enter focus • space toggle • a clear"))
 	lines = append(lines, "")
 
 	// Attention banner (if any sessions need attention)
@@ -124,18 +123,13 @@ func (v *DashboardView) Render(sessions []state.SessionView, counts map[state.St
 	lines = append(lines, input)
 	lines = append(lines, "")
 
-	// Projects table header
-	header := fmt.Sprintf("%-20s %4s  %3s %3s %3s %3s %3s %3s  %s",
-		"PROJECT", "CNT", "●", "◐", "◉", "◈", "◌", "◇", "LAST")
-	lines = append(lines, v.styles.Muted.Render(header))
-
 	// Filter projects
 	items := state.FilterDashboardItems(sessions, v.filters)
 	items = state.FilterProjectItems(items, v.filterInput.Value())
 
 	if len(items) == 0 {
 		lines = append(lines, v.styles.Muted.Render("No active projects found."))
-		return v.styles.OverlayBox.Render(strings.Join(lines, "\n"))
+		return strings.Join(lines, "\n")
 	}
 
 	// Normalize cursor
@@ -146,51 +140,161 @@ func (v *DashboardView) Render(sessions []state.SessionView, counts map[state.St
 		v.cursor = 0
 	}
 
-	// Render project rows
-	maxRows := widgets.MaxInt(6, v.height-14)
-	if maxRows > len(items) {
-		maxRows = len(items)
+	// Calculate visible cards (each card takes ~3 lines with margin)
+	maxCards := widgets.MaxInt(3, (v.height-12)/3)
+	if maxCards > len(items) {
+		maxCards = len(items)
 	}
 
 	start := 0
-	if v.cursor >= maxRows {
-		start = v.cursor - maxRows + 1
+	if v.cursor >= maxCards {
+		start = v.cursor - maxCards + 1
 	}
-	end := widgets.MinInt(len(items), start+maxRows)
+	end := widgets.MinInt(len(items), start+maxCards)
 
+	// Render project cards
 	for i := start; i < end; i++ {
 		it := items[i]
+		selected := i == v.cursor
 		active := v.filters.ProjectFilter[strings.ToLower(it.Name)]
-		check := " "
-		if active {
-			check = "●"
-		}
-
-		last := ""
-		if !it.LastSeen.IsZero() {
-			last = it.LastSeen.In(time.Local).Format("01-02 15:04")
-		}
-
-		line := fmt.Sprintf("%s %-20s %4d  %3d %3d %3d %3d %3d %3d  %s",
-			check,
-			widgets.TruncateString(it.Name, 20),
-			it.Count,
-			it.StatusCount[state.StatusRunning],
-			it.StatusCount[state.StatusWaiting],
-			it.StatusCount[state.StatusApproval],
-			it.StatusCount[state.StatusNeedsAttn],
-			it.StatusCount[state.StatusStale],
-			it.StatusCount[state.StatusEnded],
-			last,
-		)
-
-		if i == v.cursor {
-			line = v.styles.OverlaySel.Render(line)
-		}
-		lines = append(lines, line)
+		card := v.renderProjectCard(it, selected, active)
+		lines = append(lines, card)
 	}
 
-	return v.styles.OverlayBox.Render(strings.Join(lines, "\n"))
+	// Scroll indicator
+	if len(items) > maxCards {
+		remaining := len(items) - end
+		if remaining > 0 {
+			lines = append(lines, v.styles.Muted.Render(fmt.Sprintf("  ↓ %d more projects...", remaining)))
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderProjectCard renders a single project card with health-based borders
+func (v *DashboardView) renderProjectCard(it state.ProjectItem, selected, active bool) string {
+	cardWidth := widgets.MinInt(60, widgets.MaxInt(40, v.width-10))
+
+	// Determine card health
+	health := projectHealth(it)
+
+	// Build header: checkbox + name + status indicator + time
+	check := " "
+	if active {
+		check = "●"
+	}
+
+	// Time ago
+	timeAgo := ""
+	if !it.LastSeen.IsZero() {
+		timeAgo = formatTimeAgo(it.LastSeen)
+	}
+
+	// Status indicator in header (only for healthy/dormant cards)
+	statusIndicator := ""
+	if health == "green" {
+		statusIndicator = v.styles.Accent.Render(" ✓ all clear")
+	}
+
+	// Calculate padding for right-aligned time
+	nameLen := len(it.Name)
+	if nameLen > 20 {
+		nameLen = 20
+	}
+	name := widgets.TruncateString(it.Name, 20)
+	padding := cardWidth - nameLen - len(timeAgo) - len(statusIndicator) - 6
+
+	var header string
+	if padding > 0 {
+		header = fmt.Sprintf("%s %s%s%s%s",
+			check,
+			name,
+			statusIndicator,
+			strings.Repeat(" ", padding),
+			v.styles.Muted.Render(timeAgo),
+		)
+	} else {
+		header = fmt.Sprintf("%s %s%s  %s", check, name, statusIndicator, v.styles.Muted.Render(timeAgo))
+	}
+
+	// Build badge line (only urgent states)
+	var badges []string
+	if n := it.StatusCount[state.StatusApproval]; n > 0 {
+		badges = append(badges, widgets.StatusChipHuman(state.StatusApproval, n, v.styles))
+	}
+	if n := it.StatusCount[state.StatusNeedsAttn]; n > 0 {
+		badges = append(badges, widgets.StatusChipHuman(state.StatusNeedsAttn, n, v.styles))
+	}
+
+	// Build summary line for non-urgent counts
+	activeCount := it.StatusCount[state.StatusRunning] + it.StatusCount[state.StatusWaiting]
+	doneCount := it.StatusCount[state.StatusEnded] + it.StatusCount[state.StatusStale]
+
+	var statusLine string
+	if len(badges) > 0 {
+		// Has urgent items: show badges + summary
+		badgeLine := strings.Join(badges, "  ")
+		var summaryParts []string
+		if activeCount > 0 {
+			summaryParts = append(summaryParts, fmt.Sprintf("%d active", activeCount))
+		}
+		if doneCount > 0 {
+			summaryParts = append(summaryParts, fmt.Sprintf("%d done", doneCount))
+		}
+		if len(summaryParts) > 0 {
+			statusLine = badgeLine + "\n  " + v.styles.Muted.Render("+ "+strings.Join(summaryParts, ", "))
+		} else {
+			statusLine = badgeLine
+		}
+	} else if activeCount > 0 || doneCount > 0 {
+		// No urgent: show just counts
+		var parts []string
+		if activeCount > 0 {
+			parts = append(parts, fmt.Sprintf("%d active", activeCount))
+		}
+		if doneCount > 0 {
+			parts = append(parts, fmt.Sprintf("%d done", doneCount))
+		}
+		statusLine = v.styles.Muted.Render(strings.Join(parts, ", "))
+	} else {
+		statusLine = v.styles.Muted.Render("(no sessions)")
+	}
+
+	// Combine into card
+	content := header + "\n  " + statusLine
+
+	// Pick card style based on health
+	var cardStyle = v.styles.DashCard.Width(cardWidth)
+	switch health {
+	case "red":
+		cardStyle = v.styles.DashCardRed.Width(cardWidth)
+	case "green":
+		cardStyle = v.styles.DashCardGreen.Width(cardWidth)
+	default:
+		cardStyle = v.styles.DashCardGray.Width(cardWidth)
+	}
+
+	// Override border if selected
+	if selected {
+		cardStyle = cardStyle.BorderForeground(v.styles.Accent.GetForeground())
+	}
+
+	return cardStyle.Render(content)
+}
+
+// projectHealth determines the card health based on status counts
+func projectHealth(it state.ProjectItem) string {
+	// Red = needs input (approval or attention)
+	if it.StatusCount[state.StatusApproval] > 0 || it.StatusCount[state.StatusNeedsAttn] > 0 {
+		return "red"
+	}
+	// Green = healthy (has running or waiting)
+	if it.StatusCount[state.StatusRunning] > 0 || it.StatusCount[state.StatusWaiting] > 0 {
+		return "green"
+	}
+	// Gray = dormant (only ended/stale or empty)
+	return "gray"
 }
 
 // renderAttentionBanner renders the attention-needed banner
@@ -212,7 +316,7 @@ func (v *DashboardView) renderAttentionBanner(counts map[state.Status]int) strin
 		parts = append(parts, badge)
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Center, parts...)
+	return strings.Join(parts, "  ")
 }
 
 // renderQuickStats renders the quick stats line
@@ -260,4 +364,19 @@ func (v *DashboardView) SelectedProject(sessions []state.SessionView) *state.Pro
 	}
 
 	return &items[v.cursor]
+}
+
+// formatTimeAgo formats a time as a human-readable "Xm ago" string
+func formatTimeAgo(t time.Time) string {
+	d := time.Since(t)
+	if d < time.Minute {
+		return "now"
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 }

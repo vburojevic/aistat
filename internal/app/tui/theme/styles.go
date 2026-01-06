@@ -12,11 +12,15 @@ type Styles struct {
 	Dim    lipgloss.Style
 
 	// Container styles
-	Box        lipgloss.Style
-	Panel      lipgloss.Style
-	DetailBox  lipgloss.Style
-	Card       lipgloss.Style
-	OverlayBox lipgloss.Style
+	Box           lipgloss.Style
+	Panel         lipgloss.Style
+	DetailBox     lipgloss.Style
+	Card          lipgloss.Style
+	DashCard      lipgloss.Style // Dashboard project card with spacing
+	DashCardRed   lipgloss.Style // Needs input (approval/attention)
+	DashCardGreen lipgloss.Style // Healthy (running/waiting)
+	DashCardGray  lipgloss.Style // Dormant (ended/stale only)
+	OverlayBox    lipgloss.Style
 
 	// Header and bars
 	HeaderBox   lipgloss.Style
@@ -87,6 +91,16 @@ func NewStyles(t Theme, accessible bool) Styles {
 		Border(BorderSubtle).
 		BorderForeground(t.Surface1).
 		Padding(0, 1)
+
+	s.DashCard = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(t.Overlay0).
+		Padding(0, 1).
+		MarginBottom(1)
+
+	s.DashCardRed = s.DashCard.BorderForeground(t.NeedsAttn)
+	s.DashCardGreen = s.DashCard.BorderForeground(t.Running)
+	s.DashCardGray = s.DashCard.BorderForeground(t.Overlay0)
 
 	s.OverlayBox = lipgloss.NewStyle().
 		Border(BorderSubtle).
@@ -192,6 +206,10 @@ func applyAccessibleOverrides(s Styles, t Theme) Styles {
 	s.Panel = s.Panel.Border(BorderSharp)
 	s.DetailBox = s.DetailBox.Border(BorderSharp)
 	s.Card = s.Card.Border(BorderSharp)
+	s.DashCard = s.DashCard.Border(BorderSharp)
+	s.DashCardRed = s.DashCardRed.Border(BorderSharp)
+	s.DashCardGreen = s.DashCardGreen.Border(BorderSharp)
+	s.DashCardGray = s.DashCardGray.Border(BorderSharp)
 	s.OverlayBox = s.OverlayBox.Border(BorderSharp)
 
 	// Add underlines to status badges instead of relying on color alone

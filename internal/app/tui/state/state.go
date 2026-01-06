@@ -232,14 +232,33 @@ func BuildProjectItems(sessions []SessionView) []ProjectItem {
 		items = append(items, *item)
 	}
 
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Count == items[j].Count {
-			return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
-		}
-		return items[i].Count > items[j].Count
-	})
+	// Sort by urgency (problems first)
+	SortProjectsByUrgency(items)
 
 	return items
+}
+
+// SortProjectsByUrgency sorts projects by urgency (ATTN > APPROVAL > RUNNING > etc)
+func SortProjectsByUrgency(items []ProjectItem) {
+	sort.Slice(items, func(i, j int) bool {
+		scoreI := projectUrgencyScore(items[i])
+		scoreJ := projectUrgencyScore(items[j])
+		if scoreI != scoreJ {
+			return scoreI > scoreJ
+		}
+		// Tie-breaker: most recent activity first
+		return items[i].LastSeen.After(items[j].LastSeen)
+	})
+}
+
+// projectUrgencyScore calculates urgency score for sorting
+func projectUrgencyScore(p ProjectItem) int {
+	score := 0
+	score += p.StatusCount[StatusNeedsAttn] * 10000
+	score += p.StatusCount[StatusApproval] * 1000
+	score += p.StatusCount[StatusRunning] * 100
+	score += p.StatusCount[StatusWaiting] * 10
+	return score
 }
 
 // BuildRows builds table rows from filtered sessions
