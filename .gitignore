@@ -1,0 +1,24 @@
+# Go build artifacts
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test artifacts
+*.test
+*.out
+*.prof
+
+# Coverage
+/coverage/
+
+# Vendor (optional)
+/vendor/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
