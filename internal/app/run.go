@@ -55,7 +55,7 @@ func Run() int {
 			// - If stdout is a TTY and --no-tui not set and --json not set => TUI
 			// - Else => list once (or watch if --watch)
 			if term.IsTerminal(int(os.Stdout.Fd())) && !flagNoTUI && !flagJSON && cfg.GroupBy == "" {
-				return runTUI(cfg)
+				return runTUINew(cfg)
 			}
 			return runList(cfg, flagJSON, flagWatch)
 		},
