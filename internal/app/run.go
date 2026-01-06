@@ -134,6 +134,8 @@ func Run() int {
 	rootCmd.AddCommand(newShowCmd())
 	// summary
 	rootCmd.AddCommand(newSummaryCmd())
+	// help (agent-friendly)
+	rootCmd.AddCommand(newHelpCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		return 1

@@ -40,6 +40,12 @@ aistat
 
 Tip: press `:` in the TUI for the command palette.
 
+Agent-friendly help:
+
+```sh
+aistat help --format json
+```
+
 ### 2) Wire integrations (recommended)
 
 This configures:
