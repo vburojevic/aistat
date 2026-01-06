@@ -2,71 +2,36 @@ package components
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vburojevic/aistat/internal/app/tui/theme"
 )
 
-// HeaderConfig holds header configuration
-type HeaderConfig struct {
-	RefreshInterval time.Duration
-	ActiveWindow    time.Duration
-	Redact          bool
-	ThemeName       string
-	UrgentCount     int // Count of sessions needing input (approval + attention)
-}
-
-// RenderHeader renders the application header with urgent notification
-func RenderHeader(styles theme.Styles, cfg HeaderConfig, width int) string {
-	title := styles.Title.Render("◆ aistat")
+// RenderHeader renders the minimal header: title + urgent badge
+func RenderHeader(needsInputCount int, styles theme.Styles, width int) string {
+	title := styles.Title.Render("aistat")
 
 	// Urgent badge (if any sessions need input)
-	var urgentBadge string
-	if cfg.UrgentCount > 0 {
-		urgentBadge = styles.BadgeAttn.Render(fmt.Sprintf("🚨 %d need input", cfg.UrgentCount))
+	var badge string
+	if needsInputCount > 0 {
+		badge = styles.BadgeNeedsInput.Render(fmt.Sprintf("● %d need input", needsInputCount))
 	}
 
-	// Meta info - simplified
-	meta := styles.Muted.Render(fmt.Sprintf("↻ %s • %s", cfg.RefreshInterval, cfg.ThemeName))
+	if badge == "" {
+		return styles.Header.Width(width).Render(title)
+	}
 
-	// Calculate spacing
+	// Layout: title on left, badge on right
 	titleWidth := lipgloss.Width(title)
-	urgentWidth := lipgloss.Width(urgentBadge)
-	metaWidth := lipgloss.Width(meta)
-	totalContent := titleWidth + urgentWidth + metaWidth
-	if urgentWidth > 0 {
-		totalContent += 4 // Extra spacing around urgent badge
-	}
-	gap := width - totalContent - 4
+	badgeWidth := lipgloss.Width(badge)
+	gap := width - titleWidth - badgeWidth - 4
 
 	if gap < 1 {
-		// Narrow mode - stack vertically
-		parts := []string{title}
-		if urgentBadge != "" {
-			parts = append(parts, urgentBadge)
-		}
-		parts = append(parts, meta)
-		return lipgloss.JoinVertical(lipgloss.Left, parts...)
+		// Too narrow - just show title
+		return styles.Header.Width(width).Render(title)
 	}
 
-	// Wide mode - side by side with urgent badge prominent
-	var parts []string
-	parts = append(parts, title)
-	if urgentBadge != "" {
-		parts = append(parts, "  "+urgentBadge)
-	}
 	spacer := lipgloss.NewStyle().Width(gap).Render("")
-	parts = append(parts, spacer, meta)
-	return lipgloss.JoinHorizontal(lipgloss.Center, parts...)
-}
-
-// RenderTitleOnly renders just the title
-func RenderTitleOnly(styles theme.Styles) string {
-	return styles.Title.Render("◆ aistat")
-}
-
-// RenderBanner renders the onboarding banner
-func RenderBanner(styles theme.Styles) string {
-	return styles.PillActive.Render("Press ? for help • p projects • / search • : commands")
+	row := lipgloss.JoinHorizontal(lipgloss.Center, title, spacer, badge)
+	return styles.Header.Width(width).Render(row)
 }

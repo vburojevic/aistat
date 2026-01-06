@@ -5,226 +5,146 @@ import "github.com/charmbracelet/lipgloss"
 // Styles holds all the lipgloss styles for the TUI
 type Styles struct {
 	// Text styles
-	Title  lipgloss.Style
-	Muted  lipgloss.Style
-	Accent lipgloss.Style
-	Bold   lipgloss.Style
-	Dim    lipgloss.Style
+	Text       lipgloss.Style // Primary text
+	Muted      lipgloss.Style // Secondary/dimmed text
+	Title      lipgloss.Style // App title
+	Label      lipgloss.Style // Key labels in detail pane
+	Value      lipgloss.Style // Values in detail pane
 
-	// Container styles
-	Box           lipgloss.Style
-	Panel         lipgloss.Style
-	DetailBox     lipgloss.Style
-	Card          lipgloss.Style
-	DashCard      lipgloss.Style // Dashboard project card with spacing
-	DashCardRed   lipgloss.Style // Needs input (approval/attention)
-	DashCardGreen lipgloss.Style // Healthy (running/waiting)
-	DashCardGray  lipgloss.Style // Dormant (ended/stale only)
-	OverlayBox    lipgloss.Style
+	// Layout styles
+	App        lipgloss.Style // Outer app container
+	Header     lipgloss.Style // Header bar
+	Footer     lipgloss.Style // Footer/shortcut bar
+	Panel      lipgloss.Style // Generic panel with border
+	List       lipgloss.Style // Session list panel
+	Detail     lipgloss.Style // Detail pane panel
+	Divider    lipgloss.Style // Project group divider
 
-	// Header and bars
-	HeaderBox   lipgloss.Style
-	ShortcutBar lipgloss.Style
-	Section     lipgloss.Style
-	GroupHeader lipgloss.Style
+	// Status dots
+	DotActive     lipgloss.Style // Green dot
+	DotIdle       lipgloss.Style // Blue dot
+	DotNeedsInput lipgloss.Style // Peach dot
 
-	// Pills and badges
-	Pill       lipgloss.Style
-	PillActive lipgloss.Style
+	// Badges
+	BadgeNeedsInput lipgloss.Style // "N need input" badge in header
 
-	// Status badges
-	BadgeRun   lipgloss.Style
-	BadgeWait  lipgloss.Style
-	BadgeAppr  lipgloss.Style
-	BadgeAttn  lipgloss.Style
-	BadgeStale lipgloss.Style
-	BadgeEnded lipgloss.Style
+	// Selection
+	Selected lipgloss.Style // Arrow indicator style
+	Row      lipgloss.Style // Normal row
+	RowDim   lipgloss.Style // Ended/dimmed row
 
-	// Selection and highlighting
-	Selected   lipgloss.Style
-	OverlaySel lipgloss.Style
-	Changed    lipgloss.Style
+	// Filter
+	FilterPrompt lipgloss.Style // "/ " prompt
+	FilterText   lipgloss.Style // Filter text input
 
-	// Provider styles
+	// Help overlay
+	HelpOverlay lipgloss.Style // Help modal container
+	HelpTitle   lipgloss.Style // Help modal title
+	HelpKey     lipgloss.Style // Shortcut key
+	HelpDesc    lipgloss.Style // Shortcut description
+
+	// Provider
 	ProviderClaude lipgloss.Style
 	ProviderCodex  lipgloss.Style
 }
 
-// NewStyles creates a new Styles instance from a theme
-func NewStyles(t Theme, accessible bool) Styles {
+// NewStyles creates styles from the theme
+func NewStyles(t Theme) Styles {
 	s := Styles{}
 
 	// Text styles
-	s.Title = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(t.Accent)
+	s.Text = lipgloss.NewStyle().Foreground(t.Text)
+	s.Muted = lipgloss.NewStyle().Foreground(t.Muted)
+	s.Title = lipgloss.NewStyle().Foreground(t.Text).Bold(true)
+	s.Label = lipgloss.NewStyle().Foreground(t.Muted).Width(12)
+	s.Value = lipgloss.NewStyle().Foreground(t.Text)
 
-	s.Muted = lipgloss.NewStyle().
-		Foreground(t.Subtext0)
+	// Layout styles
+	s.App = lipgloss.NewStyle().
+		Background(t.Background)
 
-	s.Accent = lipgloss.NewStyle().
-		Foreground(t.Accent)
+	s.Header = lipgloss.NewStyle().
+		Foreground(t.Text).
+		Padding(0, 1)
 
-	s.Bold = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(t.Text)
-
-	s.Dim = lipgloss.NewStyle().
-		Foreground(t.Overlay0).
-		Faint(true)
-
-	// Container styles
-	s.Box = lipgloss.NewStyle().
+	s.Footer = lipgloss.NewStyle().
+		Foreground(t.Muted).
 		Padding(0, 1)
 
 	s.Panel = lipgloss.NewStyle().
-		Border(BorderSubtle).
-		BorderForeground(t.Surface2).
+		Border(BorderRounded).
+		BorderForeground(t.Border).
 		Padding(0, 1)
 
-	s.DetailBox = lipgloss.NewStyle().
-		Border(BorderSubtle).
-		BorderForeground(t.Surface2).
+	s.List = lipgloss.NewStyle().
+		Border(BorderRounded).
+		BorderForeground(t.Border)
+
+	s.Detail = lipgloss.NewStyle().
+		Border(BorderRounded).
+		BorderForeground(t.Border).
 		Padding(0, 1)
 
-	s.Card = lipgloss.NewStyle().
-		Border(BorderSubtle).
-		BorderForeground(t.Surface1).
+	s.Divider = lipgloss.NewStyle().
+		Foreground(t.Faint)
+
+	// Status dots (just colored text)
+	s.DotActive = lipgloss.NewStyle().Foreground(t.Active)
+	s.DotIdle = lipgloss.NewStyle().Foreground(t.Idle)
+	s.DotNeedsInput = lipgloss.NewStyle().Foreground(t.NeedsInput)
+
+	// Badge for header "N need input"
+	s.BadgeNeedsInput = lipgloss.NewStyle().
+		Foreground(t.NeedsInput).
+		Bold(true)
+
+	// Selection
+	s.Selected = lipgloss.NewStyle().
+		Foreground(t.NeedsInput).
+		Bold(true)
+
+	s.Row = lipgloss.NewStyle().
+		Foreground(t.Text).
 		Padding(0, 1)
 
-	s.DashCard = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(t.Overlay0).
-		Padding(0, 1).
+	s.RowDim = lipgloss.NewStyle().
+		Foreground(t.Muted).
+		Padding(0, 1)
+
+	// Filter
+	s.FilterPrompt = lipgloss.NewStyle().
+		Foreground(t.Muted)
+
+	s.FilterText = lipgloss.NewStyle().
+		Foreground(t.Text)
+
+	// Help overlay
+	s.HelpOverlay = lipgloss.NewStyle().
+		Border(BorderRounded).
+		BorderForeground(t.Border).
+		Padding(1, 2).
+		Background(t.Surface)
+
+	s.HelpTitle = lipgloss.NewStyle().
+		Foreground(t.Text).
+		Bold(true).
 		MarginBottom(1)
 
-	s.DashCardRed = s.DashCard.BorderForeground(t.NeedsAttn)
-	s.DashCardGreen = s.DashCard.BorderForeground(t.Running)
-	s.DashCardGray = s.DashCard.BorderForeground(t.Overlay0)
+	s.HelpKey = lipgloss.NewStyle().
+		Foreground(t.NeedsInput).
+		Width(12)
 
-	s.OverlayBox = lipgloss.NewStyle().
-		Border(BorderSubtle).
-		BorderForeground(t.Accent).
-		Padding(1, 2)
-
-	// Header and bars
-	s.HeaderBox = lipgloss.NewStyle().
-		Padding(0, 1)
-
-	s.ShortcutBar = lipgloss.NewStyle().
-		Foreground(t.Subtext0).
-		Background(t.Surface0).
-		Padding(0, 1)
-
-	s.Section = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(t.Accent)
-
-	s.GroupHeader = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(t.Secondary)
-
-	// Pills and badges
-	s.Pill = lipgloss.NewStyle().
-		Foreground(t.Subtext1).
-		Background(t.Surface0).
-		Padding(0, 1)
-
-	s.PillActive = lipgloss.NewStyle().
-		Foreground(t.Crust).
-		Background(t.Accent).
-		Bold(true).
-		Padding(0, 1)
-
-	// Status badges - dark background with colored text
-	baseBadge := lipgloss.NewStyle().
-		Bold(true).
-		Padding(0, 1)
-
-	s.BadgeRun = baseBadge.Copy().
-		Foreground(t.Crust).
-		Background(t.Running)
-
-	s.BadgeWait = baseBadge.Copy().
-		Foreground(t.Crust).
-		Background(t.Waiting)
-
-	s.BadgeAppr = baseBadge.Copy().
-		Foreground(t.Crust).
-		Background(t.Approval)
-
-	s.BadgeAttn = baseBadge.Copy().
-		Foreground(t.Crust).
-		Background(t.NeedsAttn)
-
-	s.BadgeStale = baseBadge.Copy().
-		Foreground(t.Text).
-		Background(t.Surface1)
-
-	s.BadgeEnded = baseBadge.Copy().
-		Foreground(t.Subtext0).
-		Background(t.Surface0).
-		Faint(true)
-
-	// Selection and highlighting
-	s.Selected = lipgloss.NewStyle().
-		Foreground(t.Accent).
-		Bold(true)
-
-	s.OverlaySel = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(t.Accent)
-
-	s.Changed = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(t.Accent)
+	s.HelpDesc = lipgloss.NewStyle().
+		Foreground(t.Muted)
 
 	// Provider styles
-	s.ProviderClaude = lipgloss.NewStyle().
-		Foreground(t.Claude).
-		Bold(true)
-
-	s.ProviderCodex = lipgloss.NewStyle().
-		Foreground(t.Codex).
-		Bold(true)
-
-	// Apply accessibility overrides
-	if accessible {
-		s = applyAccessibleOverrides(s, t)
-	}
+	s.ProviderClaude = lipgloss.NewStyle().Foreground(t.Claude)
+	s.ProviderCodex = lipgloss.NewStyle().Foreground(t.Codex)
 
 	return s
 }
 
-// applyAccessibleOverrides modifies styles for better accessibility
-func applyAccessibleOverrides(s Styles, t Theme) Styles {
-	// Remove faint styling
-	s.Muted = lipgloss.NewStyle().Foreground(t.Subtext1)
-	s.Dim = lipgloss.NewStyle().Foreground(t.Overlay1)
-
-	// Use normal borders instead of rounded
-	s.Panel = s.Panel.Border(BorderSharp)
-	s.DetailBox = s.DetailBox.Border(BorderSharp)
-	s.Card = s.Card.Border(BorderSharp)
-	s.DashCard = s.DashCard.Border(BorderSharp)
-	s.DashCardRed = s.DashCardRed.Border(BorderSharp)
-	s.DashCardGreen = s.DashCardGreen.Border(BorderSharp)
-	s.DashCardGray = s.DashCardGray.Border(BorderSharp)
-	s.OverlayBox = s.OverlayBox.Border(BorderSharp)
-
-	// Add underlines to status badges instead of relying on color alone
-	s.BadgeRun = s.BadgeRun.Underline(true)
-	s.BadgeWait = s.BadgeWait.Underline(true)
-	s.BadgeAppr = s.BadgeAppr.Underline(true)
-	s.BadgeAttn = s.BadgeAttn.Underline(true)
-	s.BadgeStale = s.BadgeStale.Underline(true)
-	s.BadgeEnded = s.BadgeEnded.Underline(true).UnsetFaint()
-
-	// Pills use borders instead of background colors
-	s.Pill = lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		Padding(0, 1)
-	s.PillActive = s.Pill.Copy().Bold(true)
-
-	return s
+// DefaultStyles returns styles using the default theme
+func DefaultStyles() Styles {
+	return NewStyles(Default)
 }

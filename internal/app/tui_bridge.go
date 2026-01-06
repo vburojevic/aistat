@@ -8,18 +8,9 @@ import (
 // runTUINew runs the new redesigned TUI
 func runTUINew(cfg Config) error {
 	tuiCfg := tui.Config{
-		Redact:         cfg.Redact,
-		ActiveWindow:   cfg.ActiveWindow,
-		RunningWindow:  cfg.RunningWindow,
-		RefreshEvery:   cfg.RefreshEvery,
-		MaxSessions:    cfg.MaxSessions,
-		IncludeEnded:   cfg.IncludeEnded,
-		ProviderFilter: cfg.ProviderFilter,
-		ProjectFilters: cfg.ProjectFilters,
-		StatusFilters:  convertStatusFilters(cfg.StatusFilters),
-		SortBy:         cfg.SortBy,
-		GroupBy:        cfg.GroupBy,
-		IncludeLastMsg: cfg.IncludeLastMsg,
+		RefreshEvery: cfg.RefreshEvery,
+		MaxSessions:  cfg.MaxSessions,
+		ShowEnded:    cfg.IncludeEnded,
 	}
 
 	fetcher := func() ([]state.SessionView, error) {
@@ -31,15 +22,6 @@ func runTUINew(cfg Config) error {
 	}
 
 	return tui.Run(tuiCfg, fetcher)
-}
-
-// convertStatusFilters converts app.Status slice to state.Status slice
-func convertStatusFilters(statuses []Status) []state.Status {
-	result := make([]state.Status, len(statuses))
-	for i, s := range statuses {
-		result[i] = state.Status(s)
-	}
-	return result
 }
 
 // convertSessionViews converts app.SessionView slice to state.SessionView slice

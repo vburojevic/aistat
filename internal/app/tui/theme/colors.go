@@ -2,61 +2,30 @@ package theme
 
 import "github.com/charmbracelet/lipgloss"
 
-// Catppuccin Mocha - Base colors
+// Muted dark palette - professional and readable
 var (
-	// Background layers (darkest to lightest)
-	ColorCrust    = lipgloss.Color("#11111b")
-	ColorMantle   = lipgloss.Color("#181825")
-	ColorBase     = lipgloss.Color("#1e1e2e")
-	ColorSurface0 = lipgloss.Color("#313244")
-	ColorSurface1 = lipgloss.Color("#45475a")
-	ColorSurface2 = lipgloss.Color("#585b70")
-
-	// Overlay layers
-	ColorOverlay0 = lipgloss.Color("#6c7086")
-	ColorOverlay1 = lipgloss.Color("#7f849c")
-	ColorOverlay2 = lipgloss.Color("#9399b2")
+	// Background layers
+	ColorBackground = lipgloss.Color("#1e1e2e") // Dark charcoal
+	ColorSurface    = lipgloss.Color("#2a2a3c") // Slightly lighter
+	ColorBorder     = lipgloss.Color("#3a3a4c") // Subtle border
 
 	// Text hierarchy
-	ColorText     = lipgloss.Color("#cdd6f4")
-	ColorSubtext1 = lipgloss.Color("#bac2de")
-	ColorSubtext0 = lipgloss.Color("#a6adc8")
+	ColorText   = lipgloss.Color("#cdd6f4") // Off-white primary
+	ColorMuted  = lipgloss.Color("#6c7086") // Gray for secondary/dimmed
+	ColorFaint  = lipgloss.Color("#45475a") // Very faint for dividers
 
-	// Catppuccin accent colors
-	ColorRosewater = lipgloss.Color("#f5e0dc")
-	ColorFlamingo  = lipgloss.Color("#f2cdcd")
-	ColorPink      = lipgloss.Color("#f5c2e7")
-	ColorMauve     = lipgloss.Color("#cba6f7")
-	ColorRed       = lipgloss.Color("#f38ba8")
-	ColorMaroon    = lipgloss.Color("#eba0ac")
-	ColorPeach     = lipgloss.Color("#fab387")
-	ColorYellow    = lipgloss.Color("#f9e2af")
-	ColorGreen     = lipgloss.Color("#a6e3a1")
-	ColorTeal      = lipgloss.Color("#94e2d5")
-	ColorSky       = lipgloss.Color("#89dceb")
-	ColorSapphire  = lipgloss.Color("#74c7ec")
-	ColorBlue      = lipgloss.Color("#89b4fa")
-	ColorLavender  = lipgloss.Color("#b4befe")
+	// Status colors (muted pastels)
+	ColorActive     = lipgloss.Color("#a8c97f") // Sage green - running
+	ColorIdle       = lipgloss.Color("#8ba4b4") // Slate blue - waiting
+	ColorNeedsInput = lipgloss.Color("#e9b59f") // Peach - needs attention
+
+	// Provider colors (subtle)
+	ColorClaude = lipgloss.Color("#b4a7d6") // Muted lavender
+	ColorCodex  = lipgloss.Color("#8fb8a8") // Muted teal
 )
 
-// Semantic status colors
-var (
-	ColorRunning   = ColorGreen // Active, healthy
-	ColorWaiting   = ColorBlue  // Idle but ready
-	ColorApproval  = ColorPeach // Needs attention
-	ColorNeedsAttn = ColorRed   // Urgent
-	ColorStale     = ColorOverlay0
-	ColorEnded     = ColorSurface2
-)
-
-// Provider colors
-var (
-	ColorClaude = ColorMauve // Purple for Claude
-	ColorCodex  = ColorTeal  // Teal for Codex
-)
-
-// Border characters for rounded subtle borders (Lazygit style)
-var BorderSubtle = lipgloss.Border{
+// Border characters for rounded subtle borders
+var BorderRounded = lipgloss.Border{
 	Top:         "─",
 	Bottom:      "─",
 	Left:        "│",
@@ -65,16 +34,4 @@ var BorderSubtle = lipgloss.Border{
 	TopRight:    "╮",
 	BottomLeft:  "╰",
 	BottomRight: "╯",
-}
-
-// Sharp borders for emphasis
-var BorderSharp = lipgloss.Border{
-	Top:         "─",
-	Bottom:      "─",
-	Left:        "│",
-	Right:       "│",
-	TopLeft:     "┌",
-	TopRight:    "┐",
-	BottomLeft:  "└",
-	BottomRight: "┘",
 }

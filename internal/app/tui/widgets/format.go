@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+// FormatAge formats a duration as a compact age string (alias for FormatAgo)
+func FormatAge(d time.Duration) string {
+	return FormatAgo(d)
+}
+
 // FormatAgo formats a duration as a human-readable age string
 func FormatAgo(d time.Duration) string {
 	if d < 0 {

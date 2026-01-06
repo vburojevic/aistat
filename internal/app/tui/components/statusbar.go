@@ -13,119 +13,57 @@ type Shortcut struct {
 	Desc string
 }
 
-// ShortcutSets for different contexts
-var (
-	ShortcutsDashboard = []Shortcut{
-		{"tab", "list"},
-		{"enter", "focus"},
-		{"/", "search"},
-		{"p", "projects"},
-		{"?", "help"},
-		{"q", "quit"},
-	}
-
-	ShortcutsSessionList = []Shortcut{
-		{"/", "filter"},
-		{":", "palette"},
-		{"tab", "dashboard"},
-		{"p", "projects"},
-		{"r", "refresh"},
-		{"?", "help"},
-		{"q", "quit"},
-		{"s", "sort"},
-		{"g", "group"},
-		{"v", "view"},
-		{"d", "detail"},
-		{"b", "sidebar"},
-		{"m", "last-msg"},
-		{"c", "redact"},
-		{"space", "select"},
-		{"P", "pin"},
-		{"y", "copy ids"},
-		{"D", "copy detail"},
-		{"o", "open"},
-		{"a", "jump approval"},
-		{"u", "jump running"},
-		{"1/2", "providers"},
-		{"R/W/E/S/Z/N", "status"},
-		{"t", "theme"},
-		{"A", "access"},
-	}
-
-	ShortcutsProjects = []Shortcut{
-		{"enter", "focus"},
-		{"space", "toggle"},
-		{"a", "clear"},
-		{"j/k", "nav"},
-		{"esc", "close"},
-	}
-
-	ShortcutsHelp = []Shortcut{
-		{"?", "close"},
-		{"esc", "close"},
-	}
-)
-
-// RenderShortcutBar renders the shortcut bar at the bottom
-func RenderShortcutBar(shortcuts []Shortcut, styles theme.Styles, width int) string {
-	sep := "  •  "
-	var lines []string
-	line := ""
-
-	for _, s := range shortcuts {
-		entry := styles.Accent.Render(s.Key) + " " + s.Desc
-
-		if line == "" {
-			line = entry
-			continue
-		}
-
-		// Check if adding this entry would exceed width
-		testLine := line + sep + entry
-		if lipgloss.Width(testLine) <= width-4 {
-			line = testLine
-			continue
-		}
-
-		// Start new line
-		lines = append(lines, line)
-		line = entry
-	}
-
-	if line != "" {
-		lines = append(lines, line)
-	}
-
-	// Style each line
-	result := make([]string, len(lines))
-	for i, l := range lines {
-		result[i] = styles.ShortcutBar.Width(width).Render(l)
-	}
-
-	return strings.Join(result, "\n")
+// MainShortcuts - the ~10 essential shortcuts for normal mode
+var MainShortcuts = []Shortcut{
+	{"j/k", "navigate"},
+	{"enter", "select"},
+	{"/", "filter"},
+	{"?", "help"},
+	{"q", "quit"},
 }
 
-// RenderContextBar renders context-specific actions
-func RenderContextBar(context string, selectedCount int, styles theme.Styles) string {
-	switch context {
-	case "selected":
-		return styles.Muted.Render(
-			lipgloss.NewStyle().Render(
-				strings.Join([]string{
-					styles.Accent.Render("Selected ") + string(rune('0'+selectedCount)),
-					"y copy ids",
-					"D copy detail",
-					"o open",
-				}, " • "),
-			),
-		)
-	case "palette":
-		return styles.Muted.Render("Palette: enter to run • esc to cancel")
-	case "projects":
-		return styles.Muted.Render("Projects: enter/space toggle • a clear • esc close")
-	case "dashboard":
-		return styles.Muted.Render("Dashboard: enter focus • space toggle • a clear • tab back")
-	default:
-		return ""
+// FilterShortcuts - shown when filter is active
+var FilterShortcuts = []Shortcut{
+	{"esc", "clear"},
+	{"enter", "apply"},
+}
+
+// RenderFooter renders the context-aware footer with shortcuts
+func RenderFooter(filterActive bool, refreshing bool, styles theme.Styles, width int) string {
+	var shortcuts []Shortcut
+	if filterActive {
+		shortcuts = FilterShortcuts
+	} else {
+		shortcuts = MainShortcuts
 	}
+
+	// Build shortcut string
+	var parts []string
+	for _, s := range shortcuts {
+		parts = append(parts, styles.HelpKey.Render(s.Key)+" "+s.Desc)
+	}
+	shortcutStr := strings.Join(parts, "  ")
+
+	// Add refresh indicator on right
+	var indicator string
+	if refreshing {
+		indicator = styles.Muted.Render("↻")
+	}
+
+	if indicator == "" {
+		return styles.Footer.Width(width).Render(shortcutStr)
+	}
+
+	// Layout with indicator on right
+	scWidth := lipgloss.Width(shortcutStr)
+	indWidth := lipgloss.Width(indicator)
+	gap := width - scWidth - indWidth - 4
+
+	if gap < 1 {
+		return styles.Footer.Width(width).Render(shortcutStr)
+	}
+
+	spacer := lipgloss.NewStyle().Width(gap).Render("")
+	row := lipgloss.JoinHorizontal(lipgloss.Center, shortcutStr, spacer, indicator)
+	return styles.Footer.Width(width).Render(row)
 }
