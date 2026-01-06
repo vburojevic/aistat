@@ -25,16 +25,16 @@ brews:
   - name: aistat
     homepage: https://github.com/vburojevic/aistat
     description: "List active Claude Code and Codex sessions with real-time statuses"
-    folder: Formula
+    directory: Formula
     install: |
       bin.install "aistat"
     repository:
       owner: vburojevic
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     commit_author:
       name: "Goreleaser"
       email: "goreleaser@users.noreply.github.com"
-    token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
 
 release:
   github:
