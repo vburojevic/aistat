@@ -30,21 +30,15 @@ brew upgrade aistat
 go install github.com/vburojevic/aistat/cmd/aistat@latest
 ```
 
-## Quick start
+## Quick setup
 
-### 1) Run the live TUI
+### 1) Run it once
 
 ```sh
 aistat
 ```
 
-Tip: press `:` in the TUI for the command palette.
-
-Agent-friendly help:
-
-```sh
-aistat help --format json
-```
+Tip: press `:` in the TUI for the command palette, `d` to toggle detail.
 
 ### 2) Wire integrations (recommended)
 
@@ -56,19 +50,58 @@ This configures:
 aistat install
 ```
 
-You can also run non-interactively:
+Non-interactive install:
 
 ```sh
 aistat install --skip-codex --force
 ```
 
-### 3) Check setup
+### 3) Verify setup
 
 ```sh
 aistat doctor
 ```
 
-## Usage
+If you need to repair config/hook wiring:
+
+```sh
+aistat doctor --fix
+```
+
+## Usage guide
+
+### Everyday usage
+
+- Live TUI (default on a TTY):
+  ```sh
+  aistat
+  ```
+- Non-interactive table:
+  ```sh
+  aistat --no-tui
+  ```
+- Watch mode (table refresh):
+  ```sh
+  aistat --no-tui --watch
+  ```
+- Watch NDJSON stream (timestamps included):
+  ```sh
+  aistat --watch --json
+  ```
+
+### TUI quick guide
+
+- `/` filter, `esc` clear
+- `:` command palette
+- `d` toggle detail pane (split view on wide screens)
+- `b` toggle sidebar filters
+- `s` sort, `g` group, `v` view
+- `m` toggle last message snippets
+- `P` pin, `space` select, `y` copy IDs
+- `o` open log, `D` copy detail
+- `1/2` provider filters, `R/W/E/S/Z/N` status filters
+
+### CLI commands
 
 ```
 aistat [flags]
@@ -102,34 +135,36 @@ aistat tail <id> [flags]
 
 ### Examples
 
-Live TUI (default on a TTY):
+Agent-friendly help (structured JSON):
+
+```sh
+aistat help --format json
+```
+
+Live TUI:
 
 ```sh
 aistat
 ```
 
-Non-interactive table (even on a TTY):
+Search in the TUI:
 
 ```sh
-aistat --no-tui
+# /  then type:
+#   p:myproject
+#   s:running
 ```
 
-Watch mode (table refresh):
-
-```sh
-aistat --no-tui --watch
-```
-
-Watch JSON stream (NDJSON with timestamps):
-
-```sh
-aistat --watch --json
-```
-
-JSON snapshot for scripts:
+Table snapshot for scripts:
 
 ```sh
 aistat --json
+```
+
+Watch NDJSON:
+
+```sh
+aistat --watch --json
 ```
 
 Only Codex sessions:
@@ -193,6 +228,15 @@ aistat doctor --fix --force
 ```
 
 `doctor --fix` prompts in a TTY and snapshots configs; if an error occurs it restores the backups.
+
+## AI/agent integration
+
+The `help` command outputs a machine-readable contract so agents can reason about
+commands, flags, I/O, exit codes, and config:
+
+```sh
+aistat help --format json
+```
 
 ## Configuration
 
