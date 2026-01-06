@@ -38,6 +38,8 @@ go install github.com/vburojevic/aistat/cmd/aistat@latest
 aistat
 ```
 
+Tip: press `:` in the TUI for the command palette.
+
 ### 2) Wire integrations (recommended)
 
 This configures:
@@ -80,6 +82,7 @@ aistat tail <id> [flags]
 - `--provider claude|codex` Filter by provider
 - `--project <name>` Filter by project name (repeatable or comma-separated)
 - `--status <status>` Filter by status (repeatable or comma-separated)
+- `--fields <list>` Select output columns (comma-separated or repeatable)
 - `--sort last_seen|status|provider|cost|project` Sort output
 - `--group-by provider|project|status|day|hour` Group output (non-TUI only)
 - `--include-last-msg` Include last user/assistant snippets when available
@@ -139,6 +142,12 @@ Filter by status:
 
 ```sh
 aistat --status approval
+```
+
+Custom fields:
+
+```sh
+aistat --fields provider,id,status,project
 ```
 
 Grouped by day (non-TUI):

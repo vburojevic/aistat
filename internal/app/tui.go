@@ -46,6 +46,7 @@ type tuiKeyMap struct {
 	Quit          key.Binding
 	Refresh       key.Binding
 	Filter        key.Binding
+	Palette       key.Binding
 	ToggleRedact  key.Binding
 	CopyID        key.Binding
 	CopyDetail    key.Binding
@@ -74,11 +75,11 @@ type tuiKeyMap struct {
 }
 
 func (k tuiKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Quit, k.Refresh, k.Filter, k.ToggleGroup, k.ToggleSort, k.ToggleView}
+	return []key.Binding{k.Quit, k.Refresh, k.Filter, k.Palette, k.ToggleGroup, k.ToggleSort}
 }
 func (k tuiKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Quit, k.Refresh, k.Filter, k.ToggleGroup},
+		{k.Quit, k.Refresh, k.Filter, k.Palette, k.ToggleGroup},
 		{k.ToggleSort, k.ToggleView, k.ToggleLast, k.ToggleDetail},
 		{k.CopyID, k.CopyDetail, k.OpenFile, k.TogglePin, k.ToggleSelect},
 		{k.JumpApproval, k.JumpRunning, k.ToggleTheme, k.ToggleAccess, k.ToggleSidebar},
@@ -111,10 +112,11 @@ const (
 type tuiModel struct {
 	cfg Config
 
-	table  table.Model
-	filter textinput.Model
-	help   help.Model
-	keys   tuiKeyMap
+	table   table.Model
+	filter  textinput.Model
+	palette textinput.Model
+	help    help.Model
+	keys    tuiKeyMap
 
 	width  int
 	height int
@@ -128,6 +130,8 @@ type tuiModel struct {
 	showSidebar bool
 	modeDetail  detailMode
 	helpVisible bool
+	paletteOpen bool
+	paletteMsg  string
 
 	selected map[string]bool
 	pinned   map[string]bool
@@ -206,11 +210,18 @@ func runTUI(cfg Config) error {
 	f.CharLimit = 128
 	f.Width = 40
 
+	pal := textinput.New()
+	pal.Placeholder = "command (help)"
+	pal.Prompt = ": "
+	pal.CharLimit = 128
+	pal.Width = 50
+
 	km := tuiKeyMap{
 		UpDown:        key.NewBinding(key.WithKeys("up", "down", "j", "k"), key.WithHelp("↑/↓", "move")),
 		Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 		Refresh:       key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		Filter:        key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+		Palette:       key.NewBinding(key.WithKeys(":"), key.WithHelp(":", "palette")),
 		ToggleRedact:  key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "toggle redact")),
 		CopyID:        key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "copy id(s)")),
 		CopyDetail:    key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "copy detail")),
@@ -242,6 +253,7 @@ func runTUI(cfg Config) error {
 		cfg:            cfg,
 		table:          t,
 		filter:         f,
+		palette:        pal,
 		help:           help.New(),
 		keys:           km,
 		columnMode:     "full",
@@ -271,8 +283,8 @@ func runTUI(cfg Config) error {
 		m.projectFilter[strings.ToLower(p)] = true
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	_, err := p.Run()
+	prog := tea.NewProgram(m, tea.WithAltScreen())
+	_, err := prog.Run()
 	return err
 }
 
@@ -314,6 +326,25 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, fetchSessionsCmd(m.cfg), tickCmd(m.cfg.RefreshEvery))
 
 	case tea.KeyMsg:
+		if m.paletteOpen {
+			switch msg.String() {
+			case "esc":
+				m.paletteOpen = false
+				m.palette.Blur()
+				return m, nil
+			case "enter":
+				m.executePaletteCommand(m.palette.Value())
+				m.palette.SetValue("")
+				m.paletteOpen = false
+				m.palette.Blur()
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.palette, cmd = m.palette.Update(msg)
+				return m, cmd
+			}
+		}
+
 		if m.filter.Focused() {
 			switch msg.String() {
 			case "esc":
@@ -340,6 +371,9 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, fetchSessionsCmd(m.cfg))
 		case "/":
 			m.filter.Focus()
+		case ":":
+			m.paletteOpen = true
+			m.palette.Focus()
 		case "c":
 			m.cfg.Redact = !m.cfg.Redact
 			m.applyFilterAndUpdateRows()
@@ -443,6 +477,91 @@ func (m *tuiModel) applyColumns() {
 	cols, idCol := columnsFor(m.width, m.columnMode, m.showLastCol)
 	m.table.SetColumns(cols)
 	m.idColumn = idCol
+}
+
+func (m *tuiModel) executePaletteCommand(raw string) {
+	cmdLine := strings.TrimSpace(raw)
+	if cmdLine == "" {
+		return
+	}
+	parts := strings.Fields(cmdLine)
+	if len(parts) == 0 {
+		return
+	}
+	cmd := strings.ToLower(parts[0])
+	arg := ""
+	if len(parts) > 1 {
+		arg = strings.ToLower(strings.Join(parts[1:], " "))
+	}
+
+	switch cmd {
+	case "help", "?":
+		m.paletteMsg = "Commands: show, open, copy-id, copy-detail, sort <key>, group <key>, view <full|compact>, theme, last-msg <on|off>"
+	case "show", "detail":
+		m.modeDetail = detailFull
+		m.paletteMsg = "Detail view: full"
+	case "open":
+		if s, ok := m.selectedSession(); ok {
+			_ = openSourceForSession(s.Provider, stripANSI(s.ID))
+			m.paletteMsg = "Opened log"
+		}
+	case "copy-id":
+		ids := m.selectedIDs()
+		if len(ids) > 0 {
+			_ = copyToClipboard(strings.Join(ids, "\n"))
+		} else if s, ok := m.selectedSession(); ok {
+			_ = copyToClipboard(stripANSI(s.ID))
+		}
+		m.paletteMsg = "Copied id"
+	case "copy-detail":
+		if s, ok := m.selectedSession(); ok {
+			_ = copyToClipboard(stripANSI(s.Detail))
+			m.paletteMsg = "Copied detail"
+		}
+	case "sort":
+		if arg != "" {
+			m.cfg.SortBy = arg
+		}
+		m.paletteMsg = "Sort: " + m.cfg.SortBy
+		m.applyFilterAndUpdateRows()
+	case "group":
+		if arg != "" {
+			m.cfg.GroupBy = arg
+		}
+		m.paletteMsg = "Group: " + safe(m.cfg.GroupBy, "none")
+		m.applyFilterAndUpdateRows()
+	case "view":
+		if arg == "compact" {
+			m.columnMode = "compact"
+		} else if arg == "full" {
+			m.columnMode = "full"
+		} else {
+			if m.columnMode == "full" {
+				m.columnMode = "compact"
+			} else {
+				m.columnMode = "full"
+			}
+		}
+		m.applyColumns()
+		m.applyFilterAndUpdateRows()
+	case "theme":
+		m.themeIndex = (m.themeIndex + 1) % len(themes)
+		applyTheme(themes[m.themeIndex], m.accessible)
+		m.paletteMsg = "Theme: " + themes[m.themeIndex].name
+	case "last-msg":
+		if arg == "on" {
+			m.showLastCol = true
+		} else if arg == "off" {
+			m.showLastCol = false
+		} else {
+			m.showLastCol = !m.showLastCol
+		}
+		m.cfg.IncludeLastMsg = m.showLastCol
+		m.applyColumns()
+		m.applyFilterAndUpdateRows()
+	default:
+		m.paletteMsg = "Unknown command"
+	}
 }
 
 func columnsFor(width int, mode string, showLast bool) ([]table.Column, int) {
@@ -720,6 +839,20 @@ func (m *tuiModel) View() string {
 	}
 	b.WriteString(styleBox.Render(filterLine))
 	b.WriteString("\n")
+
+	if m.paletteOpen {
+		pLine := m.palette.View()
+		if m.palette.Value() == "" {
+			pLine = styleMuted.Render(m.palette.Prompt + m.palette.Placeholder)
+		}
+		b.WriteString(styleBox.Render(pLine))
+		b.WriteString("\n")
+		b.WriteString(styleMuted.Render("Palette: show, open, copy-id, copy-detail, sort <key>, group <key>, view <full|compact>, theme, last-msg <on|off>"))
+		b.WriteString("\n")
+	} else if m.paletteMsg != "" {
+		b.WriteString(styleMuted.Render(m.paletteMsg))
+		b.WriteString("\n")
+	}
 
 	b.WriteString(m.legendView())
 	b.WriteString("\n")

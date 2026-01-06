@@ -22,6 +22,8 @@ func defaultConfig() Config {
 		AllScanWindow:  defaultAllScanWindow,
 		ProjectFilters: nil,
 		StatusFilters:  nil,
+		Fields:         defaultFields(),
+		FieldsExplicit: false,
 		SortBy:         "last_seen",
 		GroupBy:        "",
 		IncludeLastMsg: false,

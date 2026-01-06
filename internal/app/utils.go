@@ -217,6 +217,43 @@ func normalizeList(vals []string) []string {
 	return out
 }
 
+func defaultFields() []string {
+	return []string{"provider", "status", "id", "project", "dir", "model", "age", "cost"}
+}
+
+func parseFields(vals []string, defaults []string) ([]string, error) {
+	fields := normalizeList(vals)
+	if len(fields) == 0 {
+		return append([]string(nil), defaults...), nil
+	}
+	allowed := map[string]bool{
+		"provider":       true,
+		"status":         true,
+		"id":             true,
+		"project":        true,
+		"dir":            true,
+		"model":          true,
+		"age":            true,
+		"since":          true,
+		"cost":           true,
+		"last_user":      true,
+		"last_assistant": true,
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range fields {
+		if !allowed[f] {
+			return nil, fmt.Errorf("invalid --fields: %s", f)
+		}
+		if seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	return out, nil
+}
+
 func parseStatusFilters(vals []string) ([]Status, error) {
 	if len(vals) == 0 {
 		return nil, nil

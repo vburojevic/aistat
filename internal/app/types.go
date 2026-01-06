@@ -107,6 +107,8 @@ type Config struct {
 	AllScanWindow  time.Duration
 	ProjectFilters []string
 	StatusFilters  []Status
+	Fields         []string
+	FieldsExplicit bool
 	SortBy         string
 	GroupBy        string
 	IncludeLastMsg bool

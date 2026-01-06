@@ -34,6 +34,7 @@ func Run() int {
 		flagNoColor       bool
 		flagProjects      []string
 		flagStatus        []string
+		flagFields        []string
 		flagSortBy        string
 		flagGroupBy       string
 		flagIncludeLast   bool
@@ -44,7 +45,8 @@ func Run() int {
 		Short: "List active Claude Code and Codex sessions (with real-time statuses)",
 		Long:  "aistat collects session events from Claude Code hooks/statusline and from Codex rollout logs/notify, then renders a slick live list.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := cfgFromFlags(baseCfg, flagProvider, flagAll, flagRedact, flagActiveWindow, flagRunningWindow, flagRefreshEvery, flagMax, flagNoColor, flagProjects, flagStatus, flagSortBy, flagGroupBy, flagIncludeLast)
+			fieldsExplicit := cmd.Flags().Changed("fields")
+			cfg, err := cfgFromFlags(baseCfg, flagProvider, flagAll, flagRedact, flagActiveWindow, flagRunningWindow, flagRefreshEvery, flagMax, flagNoColor, flagProjects, flagStatus, flagFields, fieldsExplicit, flagSortBy, flagGroupBy, flagIncludeLast)
 			if err != nil {
 				return err
 			}
@@ -73,6 +75,7 @@ func Run() int {
 	rootCmd.Flags().BoolVar(&flagNoColor, "no-color", false, "Disable color output (TUI + table)")
 	rootCmd.Flags().StringSliceVar(&flagProjects, "project", nil, "Filter by project name (repeatable or comma-separated)")
 	rootCmd.Flags().StringSliceVar(&flagStatus, "status", nil, "Filter by status: running|waiting|approval|stale|ended|needs_attention")
+	rootCmd.Flags().StringSliceVar(&flagFields, "fields", nil, "Output fields (comma-separated or repeatable)")
 	rootCmd.Flags().StringVar(&flagSortBy, "sort", "last_seen", "Sort by: last_seen|status|provider|cost|project")
 	rootCmd.Flags().StringVar(&flagGroupBy, "group-by", "", "Group by: provider|project|status|day|hour (non-TUI only)")
 	rootCmd.Flags().BoolVar(&flagIncludeLast, "include-last-msg", false, "Include last user/assistant messages when available")
@@ -138,7 +141,7 @@ func Run() int {
 	return 0
 }
 
-func cfgFromFlags(base Config, provider string, all bool, redact bool, activeWinStr, runningWinStr, refreshStr string, max int, noColor bool, projects []string, statuses []string, sortBy string, groupBy string, includeLast bool) (Config, error) {
+func cfgFromFlags(base Config, provider string, all bool, redact bool, activeWinStr, runningWinStr, refreshStr string, max int, noColor bool, projects []string, statuses []string, fields []string, fieldsExplicit bool, sortBy string, groupBy string, includeLast bool) (Config, error) {
 	cfg := base
 
 	cfg.ProviderFilter = strings.TrimSpace(strings.ToLower(provider))
@@ -151,6 +154,12 @@ func cfgFromFlags(base Config, provider string, all bool, redact bool, activeWin
 		return Config{}, err
 	}
 	cfg.StatusFilters = statusFilters
+	fieldList, err := parseFields(fields, base.Fields)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Fields = fieldList
+	cfg.FieldsExplicit = fieldsExplicit
 	cfg.SortBy = strings.TrimSpace(strings.ToLower(sortBy))
 	cfg.GroupBy = strings.TrimSpace(strings.ToLower(groupBy))
 	cfg.IncludeLastMsg = includeLast
