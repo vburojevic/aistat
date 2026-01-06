@@ -134,6 +134,8 @@ func Run() int {
 	rootCmd.AddCommand(newShowCmd())
 	// summary
 	rootCmd.AddCommand(newSummaryCmd())
+	// projects
+	rootCmd.AddCommand(newProjectsCmd())
 	// help (agent-friendly)
 	rootCmd.AddCommand(newHelpCmd())
 

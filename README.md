@@ -38,7 +38,7 @@ go install github.com/vburojevic/aistat/cmd/aistat@latest
 aistat
 ```
 
-Tip: press `:` in the TUI for the command palette, `d` to toggle detail.
+Tip: press `:` in the TUI for the command palette, `d` to toggle detail. Press `p` to open the project picker.
 
 ### 2) Wire integrations (recommended)
 
@@ -93,6 +93,7 @@ aistat doctor --fix
 
 - `/` filter, `esc` clear
 - `:` command palette
+- `p` project picker (toggle projects)
 - `d` toggle detail pane (split view on wide screens)
 - `b` toggle sidebar filters
 - `s` sort, `g` group, `v` view
@@ -105,6 +106,7 @@ aistat doctor --fix
 
 ```
 aistat [flags]
+aistat projects [flags]
 aistat show <id> [flags]
 aistat summary [flags]
 aistat install [flags]
@@ -139,6 +141,12 @@ Agent-friendly help (structured JSON):
 
 ```sh
 aistat help --format json
+```
+
+List all projects:
+
+```sh
+aistat projects
 ```
 
 Live TUI:

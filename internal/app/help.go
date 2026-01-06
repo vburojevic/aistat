@@ -97,6 +97,7 @@ func buildHelpDoc() helpDoc {
 
 	commands := []helpCommand{
 		{Name: "aistat", Usage: "aistat [flags]", Description: "List sessions (TUI on TTY unless --no-tui or --json)"},
+		{Name: "projects", Usage: "aistat projects [--json] [--sort count|name|last_seen]", Description: "List projects with counts and last activity"},
 		{Name: "show", Usage: "aistat show <id> [--json]", Description: "Show details for a single session"},
 		{Name: "summary", Usage: "aistat summary [--group-by project] [--json]", Description: "Summarize sessions by group"},
 		{Name: "tail", Usage: "aistat tail <id> [--follow]", Description: "Tail a session transcript/log"},
@@ -111,6 +112,7 @@ func buildHelpDoc() helpDoc {
 		OneLiner: "List active Claude Code and Codex sessions (with real-time statuses)",
 		Usage: []string{
 			"aistat [flags]",
+			"aistat projects [flags]",
 			"aistat show <id> [flags]",
 			"aistat summary [flags]",
 			"aistat tail <id> [flags]",
@@ -140,7 +142,7 @@ func buildHelpDoc() helpDoc {
 		},
 		Notes: []string{
 			"Use `--watch --json` to stream NDJSON for dashboards.",
-			"TUI keybinds: / filter, : palette, s sort, g group, v view, m last-msg, b sidebar.",
+			"TUI keybinds: / filter, : palette, p projects, s sort, g group, v view, m last-msg, b sidebar.",
 		},
 	}
 }
