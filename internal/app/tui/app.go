@@ -295,10 +295,6 @@ func (m *Model) renderSessionList(width int) string {
 
 	var lines []string
 
-	// Column headers
-	headers := m.renderColumnHeaders()
-	lines = append(lines, headers)
-
 	// Group by project and branch
 	groups := m.groupByProjectAndBranch()
 
@@ -330,11 +326,6 @@ func (m *Model) renderSessionList(width int) string {
 	}
 
 	return strings.Join(lines, "\n")
-}
-
-// renderColumnHeaders renders the column header row
-func (m *Model) renderColumnHeaders() string {
-	return m.styles.Muted.Render("      MODEL              TIME")
 }
 
 // renderBranchHeader renders a branch sub-header with session count
@@ -402,23 +393,30 @@ func (m *Model) renderSessionRow(s state.SessionView, selected bool, width int) 
 		icon = widgets.StatusIcon(s.Status, m.styles)
 	}
 
-	// Model name (truncated) with model-specific color
-	model := widgets.TruncateString(s.Model, 16)
+	// Model name (truncated) with model-specific color - fixed width 14 chars
+	model := widgets.TruncateString(s.Model, 14)
 	if model == "" {
-		model = "unknown"
+		model = "-"
 	}
 	modelStyle := m.modelStyle(s.Model, s.Age)
-	modelText := modelStyle.Render(widgets.PadRight(model, 16))
+	modelText := modelStyle.Render(widgets.PadRight(model, 14))
+
+	// Branch name (truncated) - fixed width 10 chars
+	branch := widgets.TruncateString(s.Branch, 10)
+	if branch == "" {
+		branch = "-"
+	}
+	branchText := m.styles.Muted.Render(widgets.PadRight(branch, 10))
 
 	// Status-aware age display with status-specific color
 	statusAge := m.formatStatusAgeStyled(s)
 
-	// Build row content: indent + indicator + pin + urgency + icon + model + status-age
-	rowContent := indent + indicator + pinIndicator + urgency + icon + " " + modelText + " " + statusAge
+	// Build row content: indent + indicator + pin + urgency + icon + model + branch + status-age
+	rowContent := indent + indicator + pinIndicator + urgency + icon + " " + modelText + " " + branchText + " " + statusAge
 
-	// Apply background highlight for selected row
+	// Apply background highlight for selected row (no fixed width)
 	if selected {
-		return m.styles.RowSelected.Width(width).Render(rowContent)
+		return m.styles.RowSelected.Render(rowContent)
 	}
 
 	return rowContent

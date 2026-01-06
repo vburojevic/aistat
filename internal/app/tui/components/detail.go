@@ -28,6 +28,11 @@ func RenderDetail(s *state.SessionView, styles theme.Styles, width int) string {
 		b.WriteString(renderRow("Project", s.Project, styles))
 	}
 
+	// Branch
+	if s.Branch != "" {
+		b.WriteString(renderRow("Branch", s.Branch, styles))
+	}
+
 	// Model (with color based on model type)
 	if s.Model != "" {
 		modelStyled := styledModel(s.Model, styles)
