@@ -125,13 +125,14 @@ type tuiModel struct {
 	rowMeta     []rowMeta
 	idColumn    int
 
-	columnMode  string
-	showLastCol bool
-	showSidebar bool
-	modeDetail  detailMode
-	helpVisible bool
-	paletteOpen bool
-	paletteMsg  string
+	columnMode    string
+	showLastCol   bool
+	showSidebar   bool
+	modeDetail    detailMode
+	helpVisible   bool
+	paletteOpen   bool
+	paletteMsg    string
+	effectiveMode string
 
 	selected map[string]bool
 	pinned   map[string]bool
@@ -140,8 +141,16 @@ type tuiModel struct {
 	statusFilter   map[Status]bool
 	projectFilter  map[string]bool
 
+	filteredSessions []SessionView
+	filterCounts     map[Status]int
+	filterCost       float64
+	filterTotal      int
+
 	changedAt    map[string]time.Time
 	lastSnapshot map[string]SessionView
+	history      map[string][]time.Time
+	lastOrder    map[string]int
+	moveDir      map[string]int
 
 	err         error
 	lastRefresh time.Time
@@ -162,6 +171,7 @@ var (
 	styleBadgeStale  = lipgloss.NewStyle()
 	styleGroupHeader = lipgloss.NewStyle().Bold(true)
 	styleChanged     = lipgloss.NewStyle().Bold(true)
+	styleCard        = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
 )
 
 func applyTheme(t tuiTheme, accessible bool) {
@@ -189,7 +199,18 @@ func applyTheme(t tuiTheme, accessible bool) {
 		styleBadgeStale = styleBadge.Copy().Underline(true)
 		styleGroupHeader = lipgloss.NewStyle().Bold(true)
 		styleChanged = lipgloss.NewStyle().Bold(true)
+		styleCard = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
 	}
+}
+
+func (m *tuiModel) applyTableStyles() {
+	styles := table.DefaultStyles()
+	accent := themes[m.themeIndex].accent
+	styles.Selected = styles.Selected.Foreground(lipgloss.Color(accent)).Bold(true)
+	if !m.accessible {
+		styles.Selected = styles.Selected.Background(lipgloss.Color("0"))
+	}
+	m.table.SetStyles(styles)
 }
 
 func runTUI(cfg Config) error {
@@ -202,7 +223,7 @@ func runTUI(cfg Config) error {
 	)
 	_ = idCol
 
-	t.SetStyles(table.DefaultStyles())
+	// styles set after model init to honor theme/accessibility
 
 	f := textinput.New()
 	f.Placeholder = "filter (/, esc)"
@@ -265,12 +286,17 @@ func runTUI(cfg Config) error {
 		providerFilter: map[Provider]bool{},
 		statusFilter:   map[Status]bool{},
 		projectFilter:  map[string]bool{},
+		filterCounts:   map[Status]int{},
 		changedAt:      map[string]time.Time{},
 		lastSnapshot:   map[string]SessionView{},
+		history:        map[string][]time.Time{},
+		lastOrder:      map[string]int{},
+		moveDir:        map[string]int{},
 		themeIndex:     0,
 		accessible:     false,
 	}
 	m.idColumn = idCol
+	m.applyTableStyles()
 
 	// Initialize filters from config.
 	if cfg.ProviderFilter != "" {
@@ -341,6 +367,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			default:
 				var cmd tea.Cmd
 				m.palette, cmd = m.palette.Update(msg)
+				m.paletteMsg = palettePreview(m.palette.Value())
 				return m, cmd
 			}
 		}
@@ -374,6 +401,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ":":
 			m.paletteOpen = true
 			m.palette.Focus()
+			m.paletteMsg = palettePreview("")
 		case "c":
 			m.cfg.Redact = !m.cfg.Redact
 			m.applyFilterAndUpdateRows()
@@ -399,11 +427,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cycleGroup()
 			m.applyFilterAndUpdateRows()
 		case "v":
-			if m.columnMode == "full" {
-				m.columnMode = "compact"
-			} else {
-				m.columnMode = "full"
-			}
+			m.cycleViewMode()
 			m.applyColumns()
 			m.applyFilterAndUpdateRows()
 		case "m":
@@ -425,9 +449,11 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "t":
 			m.themeIndex = (m.themeIndex + 1) % len(themes)
 			applyTheme(themes[m.themeIndex], m.accessible)
+			m.applyTableStyles()
 		case "A":
 			m.accessible = !m.accessible
 			applyTheme(themes[m.themeIndex], m.accessible)
+			m.applyTableStyles()
 		case "b":
 			m.showSidebar = !m.showSidebar
 		case "d":
@@ -474,7 +500,16 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *tuiModel) applyColumns() {
-	cols, idCol := columnsFor(m.width, m.columnMode, m.showLastCol)
+	mode := m.columnMode
+	if mode != "card" {
+		if m.width < 80 {
+			mode = "ultra"
+		} else if m.width < 100 && mode == "full" {
+			mode = "compact"
+		}
+	}
+	m.effectiveMode = mode
+	cols, idCol := columnsFor(m.width, mode, m.showLastCol)
 	m.table.SetColumns(cols)
 	m.idColumn = idCol
 }
@@ -488,7 +523,7 @@ func (m *tuiModel) executePaletteCommand(raw string) {
 	if len(parts) == 0 {
 		return
 	}
-	cmd := strings.ToLower(parts[0])
+	cmd := resolvePaletteCommand(strings.ToLower(parts[0]))
 	arg := ""
 	if len(parts) > 1 {
 		arg = strings.ToLower(strings.Join(parts[1:], " "))
@@ -564,10 +599,72 @@ func (m *tuiModel) executePaletteCommand(raw string) {
 	}
 }
 
+func resolvePaletteCommand(input string) string {
+	commands := []string{"show", "detail", "open", "copy-id", "copy-detail", "sort", "group", "view", "theme", "last-msg", "help", "?"}
+	for _, c := range commands {
+		if c == input {
+			return c
+		}
+	}
+	for _, c := range commands {
+		if strings.HasPrefix(c, input) {
+			return c
+		}
+	}
+	for _, c := range commands {
+		if fuzzyMatch(input, c) {
+			return c
+		}
+	}
+	return input
+}
+
+func palettePreview(raw string) string {
+	cmdLine := strings.TrimSpace(raw)
+	if cmdLine == "" {
+		return "Palette: show, open, copy-id, copy-detail, sort <key>, group <key>, view <full|compact|ultra|card>, theme, last-msg <on|off>"
+	}
+	parts := strings.Fields(cmdLine)
+	cmd := resolvePaletteCommand(strings.ToLower(parts[0]))
+	switch cmd {
+	case "sort":
+		return "Sort by: last_seen | status | provider | cost | project"
+	case "group":
+		return "Group by: provider | project | status | day | hour"
+	case "view":
+		return "View: full | compact | ultra | card"
+	case "last-msg":
+		return "Toggle last message column"
+	case "show":
+		return "Expand detail view"
+	case "open":
+		return "Open selected transcript/log"
+	case "copy-id":
+		return "Copy selected IDs"
+	case "copy-detail":
+		return "Copy detail panel"
+	}
+	return "Press Enter to run"
+}
+
 func columnsFor(width int, mode string, showLast bool) ([]table.Column, int) {
 	if width <= 0 {
 		width = 120
 	}
+	if mode == "card" {
+		return []table.Column{{Title: "SESSION", Width: maxInt(20, width-4)}}, 0
+	}
+
+	if mode == "ultra" || width < 80 {
+		cols := []table.Column{
+			{Title: " ", Width: 6},
+			{Title: "STATUS", Width: 8},
+			{Title: "PROJECT", Width: 16},
+			{Title: "AGE", Width: 5},
+		}
+		return cols, 2
+	}
+
 	compact := mode != "full" || width < 100
 
 	iconCol := table.Column{Title: " ", Width: 4}
@@ -632,6 +729,28 @@ func (m *tuiModel) applyFilterAndUpdateRows() {
 
 	sortSessions(filtered, m.cfg.SortBy)
 	filtered = m.applyPinnedFirst(filtered)
+
+	m.filteredSessions = filtered
+	m.filterCounts = map[Status]int{}
+	m.filterCost = 0
+	m.filterTotal = len(filtered)
+	for _, s := range filtered {
+		m.filterCounts[s.Status]++
+		m.filterCost += s.Cost
+	}
+
+	m.moveDir = map[string]int{}
+	for idx, s := range filtered {
+		id := stripANSI(s.ID)
+		if prev, ok := m.lastOrder[id]; ok {
+			if idx < prev {
+				m.moveDir[id] = -1
+			} else if idx > prev {
+				m.moveDir[id] = 1
+			}
+		}
+		m.lastOrder[id] = idx
+	}
 
 	rows := make([]table.Row, 0, len(filtered))
 	meta := make([]rowMeta, 0, len(filtered))
@@ -722,8 +841,20 @@ func (m *tuiModel) rowForSession(s *SessionView) table.Row {
 	age := fmtAgo(s.Age)
 	cost := formatCost(s.Cost)
 	since := formatSince(s.LastSeen)
+	mode := m.effectiveMode
+	if mode == "" {
+		mode = m.columnMode
+	}
 
-	if m.columnMode != "full" || m.width < 100 {
+	if mode == "card" {
+		return table.Row{m.renderCard(*s)}
+	}
+
+	if mode == "ultra" || m.width < 80 {
+		return table.Row{prefix, status, s.Project, age}
+	}
+
+	if mode != "full" || m.width < 100 {
 		return table.Row{prefix, status, id, s.Project, age, cost}
 	}
 
@@ -746,6 +877,47 @@ func (m *tuiModel) groupRow(label string) table.Row {
 	return row
 }
 
+func (m *tuiModel) renderCard(s SessionView) string {
+	status := chip(statusIcon(s.Status)+" "+strings.ToUpper(string(s.Status)), themes[m.themeIndex].accent, "0")
+	provider := chip(strings.ToUpper(string(s.Provider)), themes[m.themeIndex].accent, "0")
+	project := s.Project
+	if project == "" {
+		project = "unknown"
+	}
+	projectChip := chip(project, themes[m.themeIndex].muted, "0")
+
+	title := fmt.Sprintf("%s %s %s", provider, status, projectChip)
+	meta := fmt.Sprintf("%s  %s  %s", s.Model, fmtAgo(s.Age), formatSince(s.LastSeen))
+	dir := s.Dir
+	if dir == "" {
+		dir = "-"
+	}
+	body := fmt.Sprintf("dir: %s", dir)
+
+	var lines []string
+	lines = append(lines, title)
+	lines = append(lines, meta)
+	lines = append(lines, body)
+	if m.showLastCol {
+		last := lastSnippet(s)
+		if last != "" {
+			lines = append(lines, last)
+		}
+	}
+	return styleCard.Render(strings.Join(lines, "\n"))
+}
+
+func chip(text, bg, fg string) string {
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	return lipgloss.NewStyle().
+		Background(lipgloss.Color(bg)).
+		Foreground(lipgloss.Color(fg)).
+		Padding(0, 1).
+		Render(text)
+}
+
 func (m *tuiModel) prefixForSession(s SessionView) string {
 	idKey := stripANSI(s.ID)
 	pinned := m.pinned[idKey]
@@ -760,8 +932,17 @@ func (m *tuiModel) prefixForSession(s SessionView) string {
 		box = "☑"
 	}
 	spark := sparkForAge(s.Age, m.cfg.ActiveWindow)
+	move := " "
+	if dir, ok := m.moveDir[idKey]; ok {
+		if dir < 0 {
+			move = "↑"
+		} else if dir > 0 {
+			move = "↓"
+		}
+	}
+	timeline := miniTimeline(m.history[idKey], m.cfg.RefreshEvery)
 	icon := providerIcon(s.Provider)
-	return fmt.Sprintf("%s%s%s", pin, box, spark+icon)
+	return fmt.Sprintf("%s%s%s%s%s", pin, box, move, timeline, spark+icon)
 }
 
 func sparkForAge(age time.Duration, window time.Duration) string {
@@ -778,6 +959,37 @@ func sparkForAge(age time.Duration, window time.Duration) string {
 		idx = len(levels) - 1
 	}
 	return levels[idx]
+}
+
+func miniTimeline(times []time.Time, refresh time.Duration) string {
+	if refresh <= 0 {
+		refresh = time.Second
+	}
+	buckets := []string{"·", "·", "·", "·"}
+	if len(times) == 0 {
+		return strings.Join(buckets, "")
+	}
+	now := time.Now().UTC()
+	window := refresh * 8
+	for _, t := range times {
+		age := now.Sub(t)
+		if age < 0 {
+			age = 0
+		}
+		if age > window {
+			continue
+		}
+		ratio := float64(age) / float64(window)
+		idx := int((1.0 - ratio) * float64(len(buckets)-1))
+		if idx < 0 {
+			idx = 0
+		}
+		if idx >= len(buckets) {
+			idx = len(buckets) - 1
+		}
+		buckets[idx] = "•"
+	}
+	return strings.Join(buckets, "")
 }
 
 func (m *tuiModel) selectedSession() (SessionView, bool) {
@@ -837,7 +1049,10 @@ func (m *tuiModel) View() string {
 	if !m.filter.Focused() && m.filter.Value() == "" {
 		filterLine = styleMuted.Render(m.filter.Prompt + m.filter.Placeholder)
 	}
-	b.WriteString(styleBox.Render(filterLine))
+	mode, _ := parseQueryMode(m.filter.Value())
+	modeLabel := strings.ToUpper(mode)
+	modeChip := styleGroupHeader.Render("[" + modeLabel + "]")
+	b.WriteString(styleBox.Render(modeChip + " " + filterLine))
 	b.WriteString("\n")
 
 	if m.paletteOpen {
@@ -847,7 +1062,7 @@ func (m *tuiModel) View() string {
 		}
 		b.WriteString(styleBox.Render(pLine))
 		b.WriteString("\n")
-		b.WriteString(styleMuted.Render("Palette: show, open, copy-id, copy-detail, sort <key>, group <key>, view <full|compact>, theme, last-msg <on|off>"))
+		b.WriteString(styleMuted.Render(m.paletteMsg))
 		b.WriteString("\n")
 	} else if m.paletteMsg != "" {
 		b.WriteString(styleMuted.Render(m.paletteMsg))
@@ -856,9 +1071,11 @@ func (m *tuiModel) View() string {
 
 	b.WriteString(m.legendView())
 	b.WriteString("\n")
+	b.WriteString(styleMuted.Render(m.actionsView()))
+	b.WriteString("\n")
 
 	content := m.table.View()
-	if m.showSidebar {
+	if m.showSidebar && m.width >= 100 {
 		content = lipgloss.JoinHorizontal(lipgloss.Top, m.sidebarView(), content)
 	}
 
@@ -884,10 +1101,7 @@ func (m *tuiModel) View() string {
 
 func (m *tuiModel) detailView() string {
 	if s, ok := m.selectedSession(); ok {
-		var b strings.Builder
-		b.WriteString(s.Detail)
-		b.WriteString(fmt.Sprintf("Seen at: %s\n", s.LastSeen.In(time.Local).Format("2006-01-02 15:04:05")))
-		return b.String()
+		return formatDetailBlock(s)
 	}
 	if m.err != nil {
 		return "Error: " + m.err.Error()
@@ -895,10 +1109,77 @@ func (m *tuiModel) detailView() string {
 	return "No session selected."
 }
 
+func formatDetailBlock(s SessionView) string {
+	lines := strings.Split(strings.TrimSpace(s.Detail), "\n")
+	maxKey := 0
+	for _, line := range lines {
+		if idx := strings.Index(line, ":"); idx > 0 {
+			key := strings.TrimSpace(line[:idx])
+			if len(key) > maxKey {
+				maxKey = len(key)
+			}
+		}
+	}
+
+	var b strings.Builder
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if idx := strings.Index(line, ":"); idx > 0 {
+			key := strings.TrimSpace(line[:idx])
+			val := strings.TrimSpace(line[idx+1:])
+			pad := strings.Repeat(" ", maxInt(0, maxKey-len(key)))
+			b.WriteString(styleMuted.Render(key + pad + " : "))
+			b.WriteString(val)
+			b.WriteString("\n")
+			continue
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString(styleMuted.Render("Seen at: "))
+	b.WriteString(s.LastSeen.In(time.Local).Format("2006-01-02 15:04:05"))
+	b.WriteString("\n")
+	return b.String()
+}
+
 func (m *tuiModel) legendView() string {
 	legend := fmt.Sprintf("%s %s %s %s %s", statusBadge(StatusRunning), statusBadge(StatusWaiting), statusBadge(StatusApproval), statusBadge(StatusStale), statusBadge(StatusEnded))
-	filters := fmt.Sprintf("group:%s sort:%s view:%s theme:%s", safe(m.cfg.GroupBy, "none"), m.cfg.SortBy, m.columnMode, themes[m.themeIndex].name)
-	return styleMuted.Render(legend + "  " + filters)
+	group := safe(m.cfg.GroupBy, "none")
+	mode := m.effectiveMode
+	if mode == "" {
+		mode = m.columnMode
+	}
+	filters := fmt.Sprintf("group:%s sort:%s view:%s theme:%s", group, m.cfg.SortBy, mode, themes[m.themeIndex].name)
+	counts := fmt.Sprintf("total:%d run:%d wait:%d appr:%d stale:%d end:%d cost:%s",
+		m.filterTotal,
+		m.filterCounts[StatusRunning],
+		m.filterCounts[StatusWaiting],
+		m.filterCounts[StatusApproval],
+		m.filterCounts[StatusStale],
+		m.filterCounts[StatusEnded],
+		formatCost(m.filterCost),
+	)
+	selected := ""
+	if len(m.selected) > 0 {
+		selected = fmt.Sprintf("selected:%d", len(m.selected))
+	}
+	parts := []string{legend, filters, counts}
+	if selected != "" {
+		parts = append(parts, selected)
+	}
+	return styleMuted.Render(strings.Join(parts, "  "))
+}
+
+func (m *tuiModel) actionsView() string {
+	if len(m.selected) > 0 {
+		return fmt.Sprintf("Selected %d: y copy ids • D copy detail • o open", len(m.selected))
+	}
+	if m.paletteOpen {
+		return "Palette: enter to run • esc to cancel"
+	}
+	return "Actions: / filter • : palette • s sort • g group • v view • m last-msg"
 }
 
 func (m *tuiModel) sidebarView() string {
@@ -1049,6 +1330,15 @@ func indexOf(list []string, val string) int {
 	return -1
 }
 
+func (m *tuiModel) cycleViewMode() {
+	order := []string{"full", "compact", "ultra", "card"}
+	idx := indexOf(order, m.columnMode)
+	if idx < 0 {
+		idx = 0
+	}
+	m.columnMode = order[(idx+1)%len(order)]
+}
+
 func (m *tuiModel) jumpToStatus(status Status) {
 	for i, meta := range m.rowMeta {
 		if meta.kind == rowSession && meta.session != nil && meta.session.Status == status {
@@ -1082,6 +1372,10 @@ func (m *tuiModel) markChanges(sessions []SessionView) {
 		prev, ok := m.lastSnapshot[id]
 		if !ok || prev.Status != s.Status || !prev.LastSeen.Equal(s.LastSeen) || prev.Cost != s.Cost {
 			m.changedAt[id] = now
+			m.history[id] = append(m.history[id], now)
+			if len(m.history[id]) > 8 {
+				m.history[id] = m.history[id][len(m.history[id])-8:]
+			}
 		}
 		m.lastSnapshot[id] = s
 	}
@@ -1170,19 +1464,37 @@ func providerIcon(p Provider) string {
 }
 
 func statusBadge(s Status) string {
+	icon := statusIcon(s)
 	switch s {
 	case StatusRunning:
-		return styleBadgeRun.Render("RUN")
+		return styleBadgeRun.Render(icon + " RUN")
 	case StatusApproval:
-		return styleBadgeAppr.Render("APPR")
+		return styleBadgeAppr.Render(icon + " APPR")
 	case StatusStale:
-		return styleBadgeStale.Render("STALE")
+		return styleBadgeStale.Render(icon + " STALE")
 	case StatusEnded:
-		return styleBadgeStale.Render("DONE")
+		return styleBadgeStale.Render(icon + " DONE")
 	case StatusNeedsAttn:
-		return styleBadgeWait.Render("ATTN")
+		return styleBadgeWait.Render(icon + " ATTN")
 	default:
-		return styleBadgeWait.Render("WAIT")
+		return styleBadgeWait.Render(icon + " WAIT")
+	}
+}
+
+func statusIcon(s Status) string {
+	switch s {
+	case StatusRunning:
+		return "▶"
+	case StatusApproval:
+		return "⚠"
+	case StatusStale:
+		return "…"
+	case StatusEnded:
+		return "✓"
+	case StatusNeedsAttn:
+		return "‼"
+	default:
+		return "⏸"
 	}
 }
 
