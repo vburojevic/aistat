@@ -346,7 +346,8 @@ func runTUI(cfg Config) error {
 		showLastCol:    false,
 		showSidebar:    true,
 		modeDetail:     detailSplit,
-		showBanner:     true,
+		showBanner:     false,
+		showDashboard:  true,
 		selected:       map[string]bool{},
 		pinned:         map[string]bool{},
 		providerFilter: map[Provider]bool{},
@@ -363,6 +364,7 @@ func runTUI(cfg Config) error {
 	}
 	m.idColumn = idCol
 	m.applyTableStyles()
+	m.project.Focus()
 
 	// Initialize filters from config.
 	if cfg.ProviderFilter != "" {
