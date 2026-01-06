@@ -401,18 +401,11 @@ func (m *Model) renderSessionRow(s state.SessionView, selected bool, width int) 
 	modelStyle := m.modelStyle(s.Model, s.Age)
 	modelText := modelStyle.Render(widgets.PadRight(model, 14))
 
-	// Branch name (truncated) - fixed width 10 chars
-	branch := widgets.TruncateString(s.Branch, 10)
-	if branch == "" {
-		branch = "-"
-	}
-	branchText := m.styles.Muted.Render(widgets.PadRight(branch, 10))
-
 	// Status-aware age display with status-specific color
 	statusAge := m.formatStatusAgeStyled(s)
 
-	// Build row content: indent + indicator + pin + urgency + icon + model + branch + status-age
-	rowContent := indent + indicator + pinIndicator + urgency + icon + " " + modelText + " " + branchText + " " + statusAge
+	// Build row content: indent + indicator + pin + urgency + icon + model + status-age
+	rowContent := indent + indicator + pinIndicator + urgency + icon + " " + modelText + " " + statusAge
 
 	// Apply background highlight for selected row (no fixed width)
 	if selected {

@@ -64,28 +64,14 @@ func RenderDetail(s *state.SessionView, styles theme.Styles, width int) string {
 		b.WriteString(renderRow("Last Seen", s.LastSeen.In(time.Local).Format("15:04:05"), styles))
 	}
 
-	// Last Exchange section (if available)
-	if s.LastUser != "" || s.LastAssist != "" {
+	// Last AI message
+	if s.LastAssist != "" {
 		b.WriteString("\n")
-		b.WriteString(styles.Divider.Render(strings.Repeat("─", minInt(width-4, 30))))
-		b.WriteString(" Last Exchange ")
-		b.WriteString(styles.Divider.Render(strings.Repeat("─", minInt(width-4, 30))))
-		b.WriteString("\n\n")
-
-		if s.LastUser != "" {
-			userMsg := truncate(s.LastUser, 100)
-			b.WriteString(styles.Label.Render("User:"))
-			b.WriteString("  ")
-			b.WriteString(userMsg)
-			b.WriteString("\n")
-		}
-		if s.LastAssist != "" {
-			assistMsg := truncate(s.LastAssist, 100)
-			b.WriteString(styles.Label.Render("Asst:"))
-			b.WriteString("  ")
-			b.WriteString(assistMsg)
-			b.WriteString("\n")
-		}
+		b.WriteString(styles.Label.Render("Last AI:"))
+		b.WriteString("\n")
+		assistMsg := truncate(s.LastAssist, 200)
+		b.WriteString(styles.Muted.Render(assistMsg))
+		b.WriteString("\n")
 	}
 
 	return b.String()
