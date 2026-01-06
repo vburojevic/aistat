@@ -157,16 +157,18 @@ func scanCodexRollouts(cfg Config, now time.Time) ([]SessionRecord, error) {
 		}
 
 		rec := SessionRecord{
-			Provider:       ProviderCodex,
-			ID:             id,
-			RolloutPath:    fp,
-			CWD:            hdr.CWD,
-			ModelID:        hdr.Model,
-			ApprovalPolicy: hdr.ApprovalPolicy,
-			LastSeen:       tail.LastTS,
-			LastEvent:      tail.LastTS,
-			LastEventName:  fmt.Sprintf("%s/%s", tail.LastEntryType, tail.LastPayloadType),
-			UpdatedAt:      now,
+			Provider:          ProviderCodex,
+			ID:                id,
+			RolloutPath:       fp,
+			CWD:               hdr.CWD,
+			ModelID:           hdr.Model,
+			ApprovalPolicy:    hdr.ApprovalPolicy,
+			LastSeen:          tail.LastTS,
+			LastEvent:         tail.LastTS,
+			LastEventName:     fmt.Sprintf("%s/%s", tail.LastEntryType, tail.LastPayloadType),
+			LastUserText:      tail.LastUserText,
+			LastAssistantText: tail.LastAssistantText,
+			UpdatedAt:         now,
 		}
 
 		// If we couldn't parse a timestamp, fall back to modtime.

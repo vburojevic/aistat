@@ -27,6 +27,8 @@ type SessionView struct {
 
 	SourcePath string
 	Detail     string
+	LastUser   string
+	LastAssist string
 }
 
 func gatherSessions(cfg Config) ([]SessionView, error) {
@@ -62,6 +64,9 @@ func gatherSessions(cfg Config) ([]SessionView, error) {
 		if cfg.ProviderFilter != "" && string(r.Provider) != cfg.ProviderFilter {
 			continue
 		}
+		if len(cfg.ProjectFilters) > 0 && !matchesProject(projectNameForRecord(r), cfg.ProjectFilters) {
+			continue
+		}
 		v := makeView(r, now, cfg)
 
 		if !cfg.IncludeEnded {
@@ -78,9 +83,7 @@ func gatherSessions(cfg Config) ([]SessionView, error) {
 		views = append(views, v)
 	}
 
-	sort.Slice(views, func(i, j int) bool {
-		return views[i].LastSeen.After(views[j].LastSeen)
-	})
+	sortSessions(views, cfg.SortBy)
 
 	if cfg.MaxSessions > 0 && len(views) > cfg.MaxSessions {
 		views = views[:cfg.MaxSessions]
@@ -172,6 +175,12 @@ func mergeInto(dst map[string]SessionRecord, src SessionRecord) {
 	if cur.TurnID == "" {
 		cur.TurnID = src.TurnID
 	}
+	if src.LastUserText != "" {
+		cur.LastUserText = src.LastUserText
+	}
+	if src.LastAssistantText != "" {
+		cur.LastAssistantText = src.LastAssistantText
+	}
 
 	dst[k] = cur
 }
@@ -214,6 +223,12 @@ func makeView(r SessionRecord, now time.Time, cfg Config) SessionView {
 	}
 
 	detail := buildDetail(r, status, reason, cfg, now)
+	lastUser := ""
+	lastAssistant := ""
+	if cfg.IncludeLastMsg {
+		lastUser = redactMessageIfNeeded(r.LastUserText, cfg.Redact)
+		lastAssistant = redactMessageIfNeeded(r.LastAssistantText, cfg.Redact)
+	}
 
 	return SessionView{
 		Provider:   r.Provider,
@@ -228,6 +243,8 @@ func makeView(r SessionRecord, now time.Time, cfg Config) SessionView {
 		LastSeen:   last,
 		SourcePath: source,
 		Detail:     detail,
+		LastUser:   lastUser,
+		LastAssist: lastAssistant,
 	}
 }
 
@@ -326,10 +343,109 @@ func buildDetail(r SessionRecord, status Status, reason string, cfg Config, now 
 		if r.RolloutPath != "" {
 			fmt.Fprintf(&b, "Rollout: %s\n", maybeRedactPath(r.RolloutPath, cfg.Redact))
 		}
+		if cfg.IncludeLastMsg {
+			if r.LastUserText != "" {
+				fmt.Fprintf(&b, "Last user: %s\n", redactMessageIfNeeded(r.LastUserText, cfg.Redact))
+			}
+			if r.LastAssistantText != "" {
+				fmt.Fprintf(&b, "Last assistant: %s\n", redactMessageIfNeeded(r.LastAssistantText, cfg.Redact))
+			}
+		}
 	}
 
 	if !r.LastSeen.IsZero() {
 		fmt.Fprintf(&b, "Last: %s ago\n", fmtAgo(now.Sub(r.LastSeen)))
 	}
 	return b.String()
+}
+
+func matchesProject(project string, filters []string) bool {
+	if project == "" {
+		return false
+	}
+	p := strings.ToLower(project)
+	for _, f := range filters {
+		if f == p {
+			return true
+		}
+	}
+	return false
+}
+
+func projectNameForRecord(r SessionRecord) string {
+	project := baseName(r.ProjectDir)
+	if project == "" {
+		project = baseName(r.CWD)
+	}
+	return project
+}
+
+func sortSessions(views []SessionView, sortBy string) {
+	sortKey := strings.ToLower(strings.TrimSpace(sortBy))
+	if sortKey == "" {
+		sortKey = "last_seen"
+	}
+	sort.SliceStable(views, func(i, j int) bool {
+		a := views[i]
+		b := views[j]
+		switch sortKey {
+		case "status":
+			if a.Status != b.Status {
+				return string(a.Status) < string(b.Status)
+			}
+		case "provider":
+			if a.Provider != b.Provider {
+				return string(a.Provider) < string(b.Provider)
+			}
+		case "cost":
+			if a.Cost != b.Cost {
+				return a.Cost > b.Cost
+			}
+		case "project":
+			if strings.ToLower(a.Project) != strings.ToLower(b.Project) {
+				return strings.ToLower(a.Project) < strings.ToLower(b.Project)
+			}
+		default:
+			// last_seen
+		}
+		return a.LastSeen.After(b.LastSeen)
+	})
+}
+
+type SessionGroup struct {
+	Group    string        `json:"group"`
+	Sessions []SessionView `json:"sessions"`
+}
+
+func groupSessions(views []SessionView, groupBy string) []SessionGroup {
+	groupKey := strings.ToLower(strings.TrimSpace(groupBy))
+	if groupKey == "" {
+		return []SessionGroup{{Group: "", Sessions: views}}
+	}
+
+	order := []string{}
+	groups := map[string][]SessionView{}
+	for _, v := range views {
+		key := ""
+		switch groupKey {
+		case "provider":
+			key = string(v.Provider)
+		case "project":
+			key = v.Project
+		case "status":
+			key = string(v.Status)
+		default:
+			key = ""
+		}
+		if _, ok := groups[key]; !ok {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], v)
+	}
+
+	out := make([]SessionGroup, 0, len(order))
+	for _, k := range order {
+		out = append(out, SessionGroup{Group: k, Sessions: groups[k]})
+	}
+	return out
 }

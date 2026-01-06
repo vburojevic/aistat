@@ -20,6 +20,10 @@ func defaultConfig() Config {
 		ProviderFilter: "",
 		NoColor:        false,
 		AllScanWindow:  defaultAllScanWindow,
+		ProjectFilters: nil,
+		SortBy:         "last_seen",
+		GroupBy:        "",
+		IncludeLastMsg: false,
 
 		TailBytesCodex:     defaultTailBytesCodex,
 		TailBytesClaude:    defaultTailBytesClaude,

@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -350,25 +349,9 @@ func copyToClipboard(text string) error {
 }
 
 func openSourceForSession(provider Provider, id string) error {
-	recs, err := loadAllRecords()
+	p, _, err := resolveSourcePath(string(provider), id)
 	if err != nil {
 		return err
 	}
-	// If id is redacted, it won't match. Try prefix matching.
-	for _, r := range recs {
-		if r.Provider != provider {
-			continue
-		}
-		if strings.HasPrefix(r.ID, id) || strings.HasPrefix(redactIDIfNeeded(r.ID, true), id) || redactIDIfNeeded(r.ID, true) == id {
-			p := r.TranscriptPath
-			if provider == ProviderCodex {
-				p = r.RolloutPath
-			}
-			if p == "" {
-				continue
-			}
-			return exec.Command("open", p).Run()
-		}
-	}
-	return errors.New("could not resolve source path (try --redact=false)")
+	return exec.Command("open", p).Run()
 }

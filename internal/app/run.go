@@ -32,6 +32,10 @@ func Run() int {
 		flagRefreshEvery  string
 		flagMax           int
 		flagNoColor       bool
+		flagProjects      []string
+		flagSortBy        string
+		flagGroupBy       string
+		flagIncludeLast   bool
 	)
 
 	rootCmd := &cobra.Command{
@@ -39,7 +43,7 @@ func Run() int {
 		Short: "List active Claude Code and Codex sessions (with real-time statuses)",
 		Long:  "aistat collects session events from Claude Code hooks/statusline and from Codex rollout logs/notify, then renders a slick live list.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := cfgFromFlags(baseCfg, flagProvider, flagAll, flagRedact, flagActiveWindow, flagRunningWindow, flagRefreshEvery, flagMax, flagNoColor)
+			cfg, err := cfgFromFlags(baseCfg, flagProvider, flagAll, flagRedact, flagActiveWindow, flagRunningWindow, flagRefreshEvery, flagMax, flagNoColor, flagProjects, flagSortBy, flagGroupBy, flagIncludeLast)
 			if err != nil {
 				return err
 			}
@@ -47,7 +51,7 @@ func Run() int {
 			// Default behavior:
 			// - If stdout is a TTY and --no-tui not set and --json not set => TUI
 			// - Else => list once (or watch if --watch)
-			if term.IsTerminal(int(os.Stdout.Fd())) && !flagNoTUI && !flagJSON {
+			if term.IsTerminal(int(os.Stdout.Fd())) && !flagNoTUI && !flagJSON && cfg.GroupBy == "" {
 				return runTUI(cfg)
 			}
 			return runList(cfg, flagJSON, flagWatch)
@@ -66,6 +70,10 @@ func Run() int {
 	rootCmd.Flags().StringVar(&flagRefreshEvery, "refresh", baseCfg.RefreshEvery.String(), "Refresh interval for watch/TUI (e.g. 1s)")
 	rootCmd.Flags().IntVar(&flagMax, "max", baseCfg.MaxSessions, "Maximum sessions to show")
 	rootCmd.Flags().BoolVar(&flagNoColor, "no-color", false, "Disable color output (TUI + table)")
+	rootCmd.Flags().StringSliceVar(&flagProjects, "project", nil, "Filter by project name (repeatable or comma-separated)")
+	rootCmd.Flags().StringVar(&flagSortBy, "sort", "last_seen", "Sort by: last_seen|status|provider|cost|project")
+	rootCmd.Flags().StringVar(&flagGroupBy, "group-by", "", "Group by: provider|project|status (non-TUI only)")
+	rootCmd.Flags().BoolVar(&flagIncludeLast, "include-last-msg", false, "Include last user/assistant messages when available")
 
 	// install
 	rootCmd.AddCommand(newInstallCmd())
@@ -115,6 +123,8 @@ func Run() int {
 
 	// config
 	rootCmd.AddCommand(newConfigCmd())
+	// tail
+	rootCmd.AddCommand(newTailCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		return 1
@@ -122,13 +132,17 @@ func Run() int {
 	return 0
 }
 
-func cfgFromFlags(base Config, provider string, all bool, redact bool, activeWinStr, runningWinStr, refreshStr string, max int, noColor bool) (Config, error) {
+func cfgFromFlags(base Config, provider string, all bool, redact bool, activeWinStr, runningWinStr, refreshStr string, max int, noColor bool, projects []string, sortBy string, groupBy string, includeLast bool) (Config, error) {
 	cfg := base
 
 	cfg.ProviderFilter = strings.TrimSpace(strings.ToLower(provider))
 	cfg.IncludeEnded = all
 	cfg.Redact = redact
 	cfg.NoColor = noColor
+	cfg.ProjectFilters = normalizeList(projects)
+	cfg.SortBy = strings.TrimSpace(strings.ToLower(sortBy))
+	cfg.GroupBy = strings.TrimSpace(strings.ToLower(groupBy))
+	cfg.IncludeLastMsg = includeLast
 
 	if d, err := time.ParseDuration(activeWinStr); err == nil && d > 0 {
 		cfg.ActiveWindow = d
@@ -155,6 +169,26 @@ func cfgFromFlags(base Config, provider string, all bool, redact bool, activeWin
 	// Wider scan window when --all is set
 	if cfg.IncludeEnded {
 		cfg.AllScanWindow = defaultAllScanWindow
+	}
+
+	if cfg.SortBy == "" {
+		cfg.SortBy = "last_seen"
+	}
+
+	switch cfg.SortBy {
+	case "last_seen", "status", "provider", "cost", "project":
+		// ok
+	default:
+		return Config{}, fmt.Errorf("invalid --sort: %s", cfg.SortBy)
+	}
+
+	if cfg.GroupBy != "" {
+		switch cfg.GroupBy {
+		case "provider", "project", "status":
+			// ok
+		default:
+			return Config{}, fmt.Errorf("invalid --group-by: %s", cfg.GroupBy)
+		}
 	}
 
 	return cfg, nil

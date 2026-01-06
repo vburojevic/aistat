@@ -1,9 +1,11 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -13,10 +15,57 @@ import (
 // -------------------------
 
 func newDoctorCmd() *cobra.Command {
+	var (
+		fix         bool
+		force       bool
+		dryRun      bool
+		skipClaude  bool
+		skipCodex   bool
+		usePath     bool
+		cmdOverride string
+	)
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check setup + show where we read sessions from",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if fix {
+				exe, err := os.Executable()
+				if err != nil {
+					return err
+				}
+				exe, _ = filepath.Abs(exe)
+
+				callCmd := exe
+				if usePath {
+					callCmd = "aistat"
+				}
+				if strings.TrimSpace(cmdOverride) != "" {
+					callCmd = strings.TrimSpace(cmdOverride)
+				}
+
+				if skipClaude && skipCodex {
+					fmt.Println("Nothing to install (both providers skipped).")
+				} else {
+					var errs []string
+					if !skipClaude {
+						if err := installClaude(callCmd, force, dryRun); err != nil {
+							errs = append(errs, "Claude: "+err.Error())
+						}
+					}
+					if !skipCodex {
+						if err := installCodex(callCmd, force, dryRun); err != nil {
+							errs = append(errs, "Codex: "+err.Error())
+						}
+					}
+					if len(errs) > 0 {
+						return errors.New(strings.Join(errs, "\n"))
+					}
+					if dryRun {
+						fmt.Println("Dry run complete.")
+					}
+				}
+			}
+
 			cfg := loadConfig()
 			ad, _ := appDir()
 			sd, _ := sessionsDir()
@@ -50,6 +99,13 @@ func newDoctorCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&fix, "fix", false, "Attempt to auto-fix setup (runs install)")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing statusLine/notify if present")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show changes without writing files")
+	cmd.Flags().BoolVar(&skipClaude, "skip-claude", false, "Skip Claude Code setup")
+	cmd.Flags().BoolVar(&skipCodex, "skip-codex", false, "Skip Codex setup")
+	cmd.Flags().BoolVar(&usePath, "use-path", false, "Use 'aistat' instead of an absolute path in configs (requires PATH)")
+	cmd.Flags().StringVar(&cmdOverride, "cmd", "", "Override the command/path written into configs (e.g. /usr/local/bin/aistat)")
 	return cmd
 }
 

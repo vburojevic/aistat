@@ -76,6 +76,9 @@ type SessionRecord struct {
 	TurnID   string `json:"turn_id,omitempty"`
 	Title    string `json:"title,omitempty"`
 	Message  string `json:"message,omitempty"`
+	// Last message snippets (best-effort; provider-specific)
+	LastUserText      string `json:"last_user_text,omitempty"`
+	LastAssistantText string `json:"last_assistant_text,omitempty"`
 
 	ApprovalPolicy string `json:"approval_policy,omitempty"`
 
@@ -102,6 +105,10 @@ type Config struct {
 	ProviderFilter string // "", "claude", "codex"
 	NoColor        bool
 	AllScanWindow  time.Duration
+	ProjectFilters []string
+	SortBy         string
+	GroupBy        string
+	IncludeLastMsg bool
 
 	// Internal tuning
 	TailBytesCodex     int

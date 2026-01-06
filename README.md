@@ -66,7 +66,8 @@ aistat doctor
 aistat [flags]
 aistat install [flags]
 aistat config [--show|--init]
-aistat doctor
+aistat doctor [--fix]
+aistat tail <id> [flags]
 ```
 
 ### Common flags
@@ -75,6 +76,10 @@ aistat doctor
 - `--watch` Continuously refresh output (non-TUI)
 - `--no-tui` Force non-interactive output even on a TTY
 - `--provider claude|codex` Filter by provider
+- `--project <name>` Filter by project name (repeatable or comma-separated)
+- `--sort last_seen|status|provider|cost|project` Sort output
+- `--group-by provider|project|status` Group output (non-TUI only)
+- `--include-last-msg` Include last user/assistant snippets when available
 - `--all` Include ended/stale sessions (wider scan window)
 - `--redact` Redact paths/IDs (default from config)
 - `--active-window 30m` Define how long a session is considered active
@@ -115,10 +120,34 @@ Only Codex sessions:
 aistat --provider codex
 ```
 
-Include ended/stale sessions:
+Multiple projects:
 
 ```sh
-aistat --all
+aistat --project alpha --project beta
+```
+
+Grouped by provider (non-TUI):
+
+```sh
+aistat --group-by provider
+```
+
+Include last message snippets:
+
+```sh
+aistat --include-last-msg
+```
+
+Tail a session log:
+
+```sh
+aistat tail <id>
+```
+
+Auto-fix setup (same behavior as install):
+
+```sh
+aistat doctor --fix --force
 ```
 
 ## Configuration

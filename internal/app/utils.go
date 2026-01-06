@@ -202,3 +202,17 @@ func maxInt(a, b int) int {
 	}
 	return b
 }
+
+func normalizeList(vals []string) []string {
+	var out []string
+	for _, v := range vals {
+		for _, part := range strings.Split(v, ",") {
+			p := strings.TrimSpace(part)
+			if p == "" {
+				continue
+			}
+			out = append(out, strings.ToLower(p))
+		}
+	}
+	return out
+}

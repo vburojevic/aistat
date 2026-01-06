@@ -40,6 +40,9 @@ func renderOnce(cfg Config, asJSON bool) error {
 	if asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
+		if cfg.GroupBy != "" {
+			return enc.Encode(groupSessions(sessions, cfg.GroupBy))
+		}
 		return enc.Encode(sessions)
 	}
 
@@ -48,6 +51,27 @@ func renderOnce(cfg Config, asJSON bool) error {
 		return nil
 	}
 
+	if cfg.GroupBy == "" {
+		renderTable(sessions)
+		return nil
+	}
+
+	groups := groupSessions(sessions, cfg.GroupBy)
+	for i, group := range groups {
+		if i > 0 {
+			fmt.Println()
+		}
+		label := group.Group
+		if label == "" {
+			label = "unknown"
+		}
+		fmt.Printf("== %s\n", label)
+		renderTable(group.Sessions)
+	}
+	return nil
+}
+
+func renderTable(sessions []SessionView) {
 	tw := prettytable.NewWriter()
 	tw.SetOutputMirror(os.Stdout)
 	tw.SetStyle(prettytable.StyleLight)
@@ -76,5 +100,4 @@ func renderOnce(cfg Config, asJSON bool) error {
 		})
 	}
 	tw.Render()
-	return nil
 }
