@@ -18,14 +18,20 @@ import (
 func runList(cfg Config, asJSON bool, watch bool) error {
 	if watch {
 		for {
-			if err := renderOnce(cfg, asJSON); err != nil {
-				return err
+			if asJSON {
+				if err := renderJSONStream(cfg); err != nil {
+					return err
+				}
+			} else {
+				if err := renderOnce(cfg, false); err != nil {
+					return err
+				}
+				// Clear screen between renders (nice watch UX)
+				if term.IsTerminal(int(os.Stdout.Fd())) {
+					fmt.Print("\033[H\033[2J")
+				}
 			}
 			time.Sleep(cfg.RefreshEvery)
-			// Clear screen between renders (nice watch UX)
-			if !asJSON && term.IsTerminal(int(os.Stdout.Fd())) {
-				fmt.Print("\033[H\033[2J")
-			}
 		}
 	}
 	return renderOnce(cfg, asJSON)
@@ -38,12 +44,7 @@ func renderOnce(cfg Config, asJSON bool) error {
 	}
 
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if cfg.GroupBy != "" {
-			return enc.Encode(groupSessions(sessions, cfg.GroupBy))
-		}
-		return enc.Encode(sessions)
+		return renderJSONSnapshot(cfg, sessions)
 	}
 
 	if len(sessions) == 0 {
@@ -100,4 +101,32 @@ func renderTable(sessions []SessionView) {
 		})
 	}
 	tw.Render()
+}
+
+func renderJSONSnapshot(cfg Config, sessions []SessionView) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	payload := jsonPayload(cfg, sessions)
+	return enc.Encode(payload)
+}
+
+func renderJSONStream(cfg Config) error {
+	sessions, err := gatherSessions(cfg)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(os.Stdout)
+	payload := jsonPayload(cfg, sessions)
+	wrapped := map[string]any{
+		"ts":   time.Now().UTC().Format(time.RFC3339),
+		"data": payload,
+	}
+	return enc.Encode(wrapped)
+}
+
+func jsonPayload(cfg Config, sessions []SessionView) any {
+	if cfg.GroupBy != "" {
+		return groupSessions(sessions, cfg.GroupBy)
+	}
+	return sessions
 }

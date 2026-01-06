@@ -64,6 +64,8 @@ aistat doctor
 
 ```
 aistat [flags]
+aistat show <id> [flags]
+aistat summary [flags]
 aistat install [flags]
 aistat config [--show|--init]
 aistat doctor [--fix]
@@ -77,8 +79,9 @@ aistat tail <id> [flags]
 - `--no-tui` Force non-interactive output even on a TTY
 - `--provider claude|codex` Filter by provider
 - `--project <name>` Filter by project name (repeatable or comma-separated)
+- `--status <status>` Filter by status (repeatable or comma-separated)
 - `--sort last_seen|status|provider|cost|project` Sort output
-- `--group-by provider|project|status` Group output (non-TUI only)
+- `--group-by provider|project|status|day|hour` Group output (non-TUI only)
 - `--include-last-msg` Include last user/assistant snippets when available
 - `--all` Include ended/stale sessions (wider scan window)
 - `--redact` Redact paths/IDs (default from config)
@@ -108,7 +111,13 @@ Watch mode (table refresh):
 aistat --no-tui --watch
 ```
 
-JSON for scripts:
+Watch JSON stream (NDJSON with timestamps):
+
+```sh
+aistat --watch --json
+```
+
+JSON snapshot for scripts:
 
 ```sh
 aistat --json
@@ -120,22 +129,40 @@ Only Codex sessions:
 aistat --provider codex
 ```
 
-Multiple projects:
+Filter multiple projects:
 
 ```sh
 aistat --project alpha --project beta
 ```
 
-Grouped by provider (non-TUI):
+Filter by status:
 
 ```sh
-aistat --group-by provider
+aistat --status approval
+```
+
+Grouped by day (non-TUI):
+
+```sh
+aistat --group-by day
 ```
 
 Include last message snippets:
 
 ```sh
 aistat --include-last-msg
+```
+
+Show a single session:
+
+```sh
+aistat show <id>
+```
+
+Summarize by project:
+
+```sh
+aistat summary --group-by project
 ```
 
 Tail a session log:

@@ -55,3 +55,27 @@ func matchID(actual, query string) bool {
 	}
 	return false
 }
+
+func resolveRecord(providerFilter string, id string) (SessionRecord, error) {
+	if strings.TrimSpace(id) == "" {
+		return SessionRecord{}, errors.New("missing session id")
+	}
+	providerFilter = strings.TrimSpace(strings.ToLower(providerFilter))
+	if providerFilter != "" && providerFilter != string(ProviderClaude) && providerFilter != string(ProviderCodex) {
+		return SessionRecord{}, errors.New("invalid provider (use claude or codex)")
+	}
+
+	recs, err := loadAllRecords()
+	if err != nil {
+		return SessionRecord{}, err
+	}
+	for _, r := range recs {
+		if providerFilter != "" && string(r.Provider) != providerFilter {
+			continue
+		}
+		if matchID(r.ID, id) {
+			return r, nil
+		}
+	}
+	return SessionRecord{}, errors.New("session not found")
+}

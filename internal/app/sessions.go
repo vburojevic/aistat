@@ -74,6 +74,9 @@ func gatherSessions(cfg Config) ([]SessionView, error) {
 				continue
 			}
 		}
+		if !matchesStatus(v.Status, cfg.StatusFilters) {
+			continue
+		}
 
 		// Active filter: unless --all, show only active-window sessions
 		if !cfg.IncludeEnded && v.Age > cfg.ActiveWindow {
@@ -434,6 +437,10 @@ func groupSessions(views []SessionView, groupBy string) []SessionGroup {
 			key = v.Project
 		case "status":
 			key = string(v.Status)
+		case "day":
+			key = v.LastSeen.In(time.Local).Format("2006-01-02")
+		case "hour":
+			key = v.LastSeen.In(time.Local).Format("2006-01-02 15:00")
 		default:
 			key = ""
 		}

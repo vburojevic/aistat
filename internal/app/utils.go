@@ -216,3 +216,32 @@ func normalizeList(vals []string) []string {
 	}
 	return out
 }
+
+func parseStatusFilters(vals []string) ([]Status, error) {
+	if len(vals) == 0 {
+		return nil, nil
+	}
+	var out []Status
+	for _, v := range vals {
+		norm := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(v, "-", "_")))
+		switch norm {
+		case string(StatusRunning), string(StatusWaiting), string(StatusApproval), string(StatusStale), string(StatusEnded), string(StatusNeedsAttn):
+			out = append(out, Status(norm))
+		default:
+			return nil, fmt.Errorf("invalid --status: %s", v)
+		}
+	}
+	return out, nil
+}
+
+func matchesStatus(status Status, filters []Status) bool {
+	if len(filters) == 0 {
+		return true
+	}
+	for _, f := range filters {
+		if status == f {
+			return true
+		}
+	}
+	return false
+}

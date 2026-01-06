@@ -106,6 +106,7 @@ type Config struct {
 	NoColor        bool
 	AllScanWindow  time.Duration
 	ProjectFilters []string
+	StatusFilters  []Status
 	SortBy         string
 	GroupBy        string
 	IncludeLastMsg bool

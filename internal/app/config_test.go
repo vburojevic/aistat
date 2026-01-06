@@ -5,7 +5,7 @@ import "testing"
 func TestCfgFromFlags(t *testing.T) {
 	base := defaultConfig()
 
-	cfg, err := cfgFromFlags(base, "CODEx", false, true, "30m", "3s", "2s", 10, true, []string{"proj1"}, "cost", "provider", true)
+	cfg, err := cfgFromFlags(base, "CODEx", false, true, "30m", "3s", "2s", 10, true, []string{"proj1"}, []string{"running"}, "cost", "provider", true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -31,19 +31,22 @@ func TestCfgFromFlags(t *testing.T) {
 		t.Fatalf("expected include-last-msg true")
 	}
 
-	if _, err := cfgFromFlags(base, "", false, true, "bad", "3s", "1s", 0, false, nil, "last_seen", "", false); err == nil {
+	if _, err := cfgFromFlags(base, "", false, true, "bad", "3s", "1s", 0, false, nil, nil, "last_seen", "", false); err == nil {
 		t.Fatalf("expected error for invalid active window")
 	}
-	if _, err := cfgFromFlags(base, "", false, true, "30m", "bad", "1s", 0, false, nil, "last_seen", "", false); err == nil {
+	if _, err := cfgFromFlags(base, "", false, true, "30m", "bad", "1s", 0, false, nil, nil, "last_seen", "", false); err == nil {
 		t.Fatalf("expected error for invalid running window")
 	}
-	if _, err := cfgFromFlags(base, "", false, true, "30m", "3s", "bad", 0, false, nil, "last_seen", "", false); err == nil {
+	if _, err := cfgFromFlags(base, "", false, true, "30m", "3s", "bad", 0, false, nil, nil, "last_seen", "", false); err == nil {
 		t.Fatalf("expected error for invalid refresh")
 	}
-	if _, err := cfgFromFlags(base, "", false, true, "30m", "3s", "1s", 0, false, nil, "nope", "", false); err == nil {
+	if _, err := cfgFromFlags(base, "", false, true, "30m", "3s", "1s", 0, false, nil, nil, "nope", "", false); err == nil {
 		t.Fatalf("expected error for invalid sort")
 	}
-	if _, err := cfgFromFlags(base, "", false, true, "30m", "3s", "1s", 0, false, nil, "last_seen", "nope", false); err == nil {
+	if _, err := cfgFromFlags(base, "", false, true, "30m", "3s", "1s", 0, false, nil, nil, "last_seen", "nope", false); err == nil {
 		t.Fatalf("expected error for invalid group-by")
+	}
+	if _, err := cfgFromFlags(base, "", false, true, "30m", "3s", "1s", 0, false, nil, []string{"bogus"}, "last_seen", "", false); err == nil {
+		t.Fatalf("expected error for invalid status")
 	}
 }

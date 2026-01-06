@@ -73,3 +73,19 @@ func TestGroupSessionsByProvider(t *testing.T) {
 		t.Fatalf("expected 2 codex sessions, got %d", len(groups[0].Sessions))
 	}
 }
+
+func TestGroupSessionsByDayHour(t *testing.T) {
+	ts := time.Date(2026, 1, 6, 12, 34, 0, 0, time.UTC)
+	views := []SessionView{
+		{Provider: ProviderCodex, ID: "a", LastSeen: ts},
+		{Provider: ProviderCodex, ID: "b", LastSeen: ts.Add(30 * time.Minute)},
+	}
+	dayGroups := groupSessions(views, "day")
+	if len(dayGroups) != 1 {
+		t.Fatalf("expected 1 day group, got %d", len(dayGroups))
+	}
+	hourGroups := groupSessions(views, "hour")
+	if len(hourGroups) != 2 {
+		t.Fatalf("expected 2 hour groups, got %d", len(hourGroups))
+	}
+}
