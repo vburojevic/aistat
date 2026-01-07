@@ -47,7 +47,8 @@ func newTailCmd() *cobra.Command {
 			tail := exec.Command("tail", tailArgs...)
 			tail.Stdout = os.Stdout
 			tail.Stderr = os.Stderr
-			tail.Stdin = os.Stdin
+			// Don't inherit stdin - tail doesn't need it and sharing stdin
+			// can cause terminal interference with other terminal sessions
 			return tail.Run()
 		},
 	}
