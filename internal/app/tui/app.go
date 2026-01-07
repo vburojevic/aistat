@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"math"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/harmonica"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vburojevic/aistat/internal/app/tui/components"
 	"github.com/vburojevic/aistat/internal/app/tui/state"
@@ -65,6 +67,13 @@ type Model struct {
 	spinnerFrame int
 	err          error
 
+	// Cursor animation (spring physics)
+	cursorSpring   harmonica.Spring
+	cursorY        float64 // Current animated Y position
+	cursorVelocity float64 // Current velocity
+	targetCursor   int     // Target cursor position
+	animating      bool    // Whether animation is in progress
+
 	// Theme
 	styles theme.Styles
 }
@@ -81,11 +90,12 @@ func New(cfg Config) *Model {
 	f.Width = 40
 
 	return &Model{
-		cfg:       cfg,
-		filter:    f,
-		styles:    styles,
-		showEnded: cfg.ShowEnded,
-		pinned:    make(map[string]bool),
+		cfg:          cfg,
+		filter:       f,
+		styles:       styles,
+		showEnded:    cfg.ShowEnded,
+		pinned:       make(map[string]bool),
+		cursorSpring: harmonica.NewSpring(harmonica.FPS(60), 6.0, 0.5),
 	}
 }
 
@@ -118,6 +128,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.refreshing {
 			m.spinnerFrame = (m.spinnerFrame + 1) % len(SpinnerFrames)
 			cmds = append(cmds, m.spinnerTickCmd())
+		}
+
+	case AnimationTickMsg:
+		if m.animating {
+			m.cursorY, m.cursorVelocity = m.cursorSpring.Update(m.cursorY, m.cursorVelocity, float64(m.targetCursor))
+
+			// Check if animation has settled
+			distance := math.Abs(m.cursorY - float64(m.targetCursor))
+			if distance < 0.5 && math.Abs(m.cursorVelocity) < 0.01 {
+				m.animating = false
+				m.cursor = m.targetCursor
+				m.cursorY = float64(m.targetCursor)
+				m.cursorVelocity = 0
+			} else {
+				// Update display cursor to nearest row
+				m.cursor = int(math.Round(m.cursorY))
+				cmds = append(cmds, m.animationTickCmd())
+			}
 		}
 
 	case tea.KeyMsg:
@@ -179,10 +207,10 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 
 	case "j", "down":
-		m.moveCursor(1)
+		return m.moveCursor(1)
 
 	case "k", "up":
-		m.moveCursor(-1)
+		return m.moveCursor(-1)
 
 	case "/":
 		m.filterActive = true
@@ -528,6 +556,10 @@ func (m *Model) spinnerTickCmd() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return SpinnerTickMsg{} })
 }
 
+func (m *Model) animationTickCmd() tea.Cmd {
+	return tea.Tick(16*time.Millisecond, func(t time.Time) tea.Msg { return AnimationTickMsg{} }) // ~60fps
+}
+
 func (m *Model) tickCmd() tea.Cmd {
 	return tea.Tick(m.cfg.RefreshEvery, func(t time.Time) tea.Msg { return TickMsg(t) })
 }
@@ -539,17 +571,34 @@ func (m *Model) selectedSession() *state.SessionView {
 	return &m.filteredSessions[m.cursor]
 }
 
-func (m *Model) moveCursor(delta int) {
-	m.cursor += delta
-	if m.cursor < 0 {
-		m.cursor = 0
+func (m *Model) moveCursor(delta int) tea.Cmd {
+	// Calculate new target position
+	newTarget := m.targetCursor + delta
+	if newTarget < 0 {
+		newTarget = 0
 	}
-	if m.cursor >= len(m.filteredSessions) {
-		m.cursor = len(m.filteredSessions) - 1
+	if newTarget >= len(m.filteredSessions) {
+		newTarget = len(m.filteredSessions) - 1
 	}
-	if m.cursor < 0 {
-		m.cursor = 0
+	if newTarget < 0 {
+		newTarget = 0
 	}
+
+	// If target hasn't changed, no animation needed
+	if newTarget == m.targetCursor && !m.animating {
+		return nil
+	}
+
+	m.targetCursor = newTarget
+
+	// Initialize animation if not already running
+	if !m.animating {
+		m.cursorY = float64(m.cursor)
+		m.cursorVelocity = 0
+	}
+	m.animating = true
+
+	return m.animationTickCmd()
 }
 
 func (m *Model) togglePin(id string) {

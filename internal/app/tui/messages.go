@@ -18,5 +18,8 @@ type TickMsg time.Time
 // SpinnerTickMsg is sent to animate the spinner
 type SpinnerTickMsg struct{}
 
+// AnimationTickMsg is sent to animate cursor spring
+type AnimationTickMsg struct{}
+
 // SpinnerFrames are braille spinner characters
 var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
