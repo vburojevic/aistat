@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // -------------------------
@@ -31,12 +33,20 @@ type CodexNotifyPayload struct {
 }
 
 func ingestCodexNotify(r io.Reader) error {
-	b, err := io.ReadAll(io.LimitReader(r, 10*1024*1024))
-	if err != nil {
-		return err
+	if f, ok := r.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		// Avoid reading from a TTY; notify input should be piped JSON.
+		return nil
+	}
+	if !stdinReady(r, 500*time.Millisecond) {
+		// Avoid hanging if no stdin data is available.
+		return nil
 	}
 	var n CodexNotifyPayload
-	if err := json.Unmarshal(b, &n); err != nil {
+	dec := json.NewDecoder(io.LimitReader(r, 10*1024*1024))
+	if err := dec.Decode(&n); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		return err
 	}
 	id := strings.TrimSpace(n.Data.SessionID)

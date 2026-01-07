@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // -------------------------
@@ -14,12 +17,20 @@ import (
 // -------------------------
 
 func ingestClaudeHook(r io.Reader) error {
-	b, err := io.ReadAll(io.LimitReader(r, 10*1024*1024))
-	if err != nil {
-		return err
+	if f, ok := r.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		// Avoid reading from a TTY; hook input should be piped JSON.
+		return nil
+	}
+	if !stdinReady(r, 500*time.Millisecond) {
+		// Avoid hanging if no stdin data is available.
+		return nil
 	}
 	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
+	dec := json.NewDecoder(io.LimitReader(r, 10*1024*1024))
+	if err := dec.Decode(&m); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		return err
 	}
 
@@ -132,12 +143,15 @@ type ClaudeStatuslineInput struct {
 
 // ingestClaudeStatusline updates the session record and returns a single-line statusline string for Claude Code.
 func ingestClaudeStatusline(r io.Reader) (string, error) {
-	b, err := io.ReadAll(io.LimitReader(r, 10*1024*1024))
-	if err != nil {
-		return "", err
+	if f, ok := r.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		return "", errors.New("stdin is a TTY")
+	}
+	if !stdinReady(r, 200*time.Millisecond) {
+		return "", errors.New("stdin not ready")
 	}
 	var in ClaudeStatuslineInput
-	if err := json.Unmarshal(b, &in); err != nil {
+	dec := json.NewDecoder(io.LimitReader(r, 10*1024*1024))
+	if err := dec.Decode(&in); err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(in.SessionID) == "" {

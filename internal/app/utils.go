@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func ptrBool(v bool) *bool           { return &v }
@@ -68,6 +70,27 @@ func readTailBytes(path string, maxBytes int) ([]byte, error) {
 		return nil, err
 	}
 	return io.ReadAll(f)
+}
+
+func stdinReady(r io.Reader, timeout time.Duration) bool {
+	f, ok := r.(*os.File)
+	if !ok {
+		return true
+	}
+	fd := int32(f.Fd())
+	if fd < 0 {
+		return false
+	}
+	ms := int(timeout / time.Millisecond)
+	if timeout < 0 {
+		ms = 0
+	}
+	fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
+	n, err := unix.Poll(fds, ms)
+	if err != nil || n <= 0 {
+		return false
+	}
+	return fds[0].Revents&(unix.POLLIN|unix.POLLHUP|unix.POLLERR) != 0
 }
 
 func splitLines(b []byte) []string {
