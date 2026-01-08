@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -37,6 +38,8 @@ type SessionView struct {
 
 func gatherSessions(cfg Config) ([]SessionView, error) {
 	now := time.Now().UTC()
+
+	cleanInvalidRecords()
 
 	if cfg.ProviderFilter == "" || cfg.ProviderFilter == string(ProviderClaude) {
 		_ = drainClaudeSpool()
@@ -292,6 +295,33 @@ func applyClaudeStatuslinePatch(b []byte) error {
 			rec.StatusReason = "active"
 		}
 	})
+}
+
+func cleanInvalidRecords() {
+	sd, err := sessionsDir()
+	if err != nil {
+		return
+	}
+	entries, err := os.ReadDir(sd)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		p := filepath.Join(sd, e.Name())
+		rec, err := loadRecord(p)
+		if err != nil {
+			continue
+		}
+		if !validSessionID(rec.ID) || strings.TrimSpace(string(rec.Provider)) == "" {
+			_ = os.Remove(p)
+		}
+	}
 }
 
 func keyFor(p Provider, id string) string {

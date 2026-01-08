@@ -144,6 +144,52 @@ func redirectStderrToDevNull() {
 	_ = unix.Dup2(int(devNull.Fd()), int(os.Stderr.Fd()))
 }
 
+func spoolSummary() (int64, int) {
+	sd, err := spoolDir()
+	if err != nil {
+		return 0, 0
+	}
+	var total int64
+	var count int
+	var walk func(string)
+	walk = func(dir string) {
+		items, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, it := range items {
+			p := filepath.Join(dir, it.Name())
+			if it.IsDir() {
+				walk(p)
+				continue
+			}
+			info, err := it.Info()
+			if err != nil {
+				continue
+			}
+			total += info.Size()
+			count++
+		}
+	}
+	walk(sd)
+	return total, count
+}
+
+func humanBytes(n int64) string {
+	if n < 1024 {
+		return fmt.Sprintf("%dB", n)
+	}
+	const unit = 1024
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit && exp < 4; v /= unit {
+		div *= unit
+		exp++
+	}
+	value := float64(n) / float64(div)
+	suffix := []string{"KB", "MB", "GB", "TB"}[exp]
+	return fmt.Sprintf("%.1f%s", value, suffix)
+}
+
 func splitLines(b []byte) []string {
 	s := strings.ReplaceAll(string(b), "\r\n", "\n")
 	return strings.Split(s, "\n")

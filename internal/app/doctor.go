@@ -105,10 +105,18 @@ func newDoctorCmd() *cobra.Command {
 			ad, _ := appDir()
 			sd, _ := sessionsDir()
 			cp, _ := configFilePath()
+			sp, _ := spoolDir()
 
 			fmt.Printf("aistat\n")
 			fmt.Printf("  app dir: %s\n", ad)
 			fmt.Printf("  sessions dir: %s\n", sd)
+			if sp != "" {
+				if sz, n := spoolSummary(); n > 0 {
+					fmt.Printf("  spool dir: %s (%d files, %s)\n", sp, n, humanBytes(sz))
+				} else {
+					fmt.Printf("  spool dir: %s\n", sp)
+				}
+			}
 			fmt.Printf("  config: %s\n", cp)
 			fmt.Printf("  redact: %v\n", cfg.Redact)
 			fmt.Printf("  active window: %s\n", cfg.ActiveWindow)
