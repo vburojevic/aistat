@@ -58,6 +58,33 @@ func normalizePlaceholder(s string) string {
 	}
 }
 
+func codexHomeDir() string {
+	if v := strings.TrimSpace(os.Getenv("CODEX_HOME")); v != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
+	}
+	return filepath.Join(home, ".codex")
+}
+
+func codexConfigPath() string {
+	base := codexHomeDir()
+	if base == "" {
+		return ""
+	}
+	return filepath.Join(base, "config.toml")
+}
+
+func codexSessionsPath() string {
+	base := codexHomeDir()
+	if base == "" {
+		return ""
+	}
+	return filepath.Join(base, "sessions")
+}
+
 func validSessionID(id string) bool {
 	return normalizePlaceholder(id) != ""
 }

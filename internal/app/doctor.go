@@ -131,11 +131,34 @@ func newDoctorCmd() *cobra.Command {
 			fmt.Printf("  projects: %s (%s)\n", claudeProjects, existsStr(claudeProjects))
 			fmt.Println()
 
-			codexCfg := filepath.Join(home, ".codex", "config.toml")
+			codexCfg := codexConfigPath()
+			if codexCfg == "" {
+				codexCfg = filepath.Join(home, ".codex", "config.toml")
+			}
 			fmt.Printf("Codex\n")
 			fmt.Printf("  config: %s (%s)\n", codexCfg, existsStr(codexCfg))
-			codexSessions := filepath.Join(home, ".codex", "sessions")
+			codexSessions := codexSessionsPath()
+			if codexSessions == "" {
+				codexSessions = filepath.Join(home, ".codex", "sessions")
+			}
 			fmt.Printf("  sessions: %s (%s)\n", codexSessions, existsStr(codexSessions))
+			if b, err := os.ReadFile(codexCfg); err == nil {
+				exe, _ := os.Executable()
+				exe, _ = filepath.Abs(exe)
+				ad, _ := appDir()
+				wrapper := filepath.Join(ad, "bin", "aistat-codex-notify")
+				state := classifyCodexNotify(string(b), exe, wrapper)
+				switch state {
+				case codexNotifyWrapper:
+					fmt.Printf("  notify: safe wrapper\n")
+				case codexNotifyUnsafe:
+					fmt.Printf("  notify: unsafe (direct aistat). Run `aistat install --force` or `aistat doctor --fix --force`.\n")
+				case codexNotifyOther:
+					fmt.Printf("  notify: custom (unchanged)\n")
+				default:
+					fmt.Printf("  notify: not set\n")
+				}
+			}
 			fmt.Println()
 
 			fmt.Println("Tip: run `aistat install` to wire up hooks/statusline/notify.")
