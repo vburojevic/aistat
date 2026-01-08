@@ -18,6 +18,15 @@ func Run() int {
 		return 2
 	}
 
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "ingest":
+			redirectStdoutStderrToDevNull()
+		case "statusline":
+			redirectStderrToDevNull()
+		}
+	}
+
 	baseCfg := loadConfig()
 
 	var (
@@ -60,6 +69,8 @@ func Run() int {
 			return runList(cfg, flagJSON, flagWatch)
 		},
 	}
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
 
 	rootCmd.Flags().BoolVar(&flagJSON, "json", false, "Output JSON instead of a table/TUI")
 	rootCmd.Flags().BoolVar(&flagWatch, "watch", false, "Continuously refresh output (non-TUI)")
@@ -96,7 +107,8 @@ func Run() int {
 		Short:  "Internal: ingest Claude Code hook events",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ingestClaudeHook(os.Stdin)
+			_ = ingestClaudeHook(os.Stdin)
+			return nil
 		},
 	})
 	ingest.AddCommand(&cobra.Command{
@@ -104,7 +116,8 @@ func Run() int {
 		Short:  "Internal: ingest Codex notify payloads",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ingestCodexNotify(os.Stdin)
+			_ = ingestCodexNotify(os.Stdin)
+			return nil
 		},
 	})
 	rootCmd.AddCommand(ingest)
@@ -128,6 +141,8 @@ func Run() int {
 
 	// config
 	rootCmd.AddCommand(newConfigCmd())
+	// clean
+	rootCmd.AddCommand(newCleanCmd())
 	// tail
 	rootCmd.AddCommand(newTailCmd())
 	// show

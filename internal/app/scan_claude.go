@@ -56,7 +56,7 @@ func scanClaudeTranscripts(cfg Config, now time.Time) ([]SessionRecord, error) {
 			continue
 		}
 		lastSeen := st.ModTime().UTC()
-		cwd := scanClaudeTailForCWD(fp, cfg.TailBytesClaude)
+		cwd := normalizePlaceholder(scanClaudeTailForCWD(fp, cfg.TailBytesClaude))
 
 		out = append(out, SessionRecord{
 			Provider:       ProviderClaude,

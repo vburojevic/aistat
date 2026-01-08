@@ -316,6 +316,7 @@ All records are stored locally under:
 - If nothing shows up, run `aistat install` and ensure Claude/Codex are writing
   events.
 - For shared screens or logs, keep `redact` enabled (default).
+- `aistat clean` removes spool data and invalid session records (use `--dry-run` to preview).
 
 ## Release process (maintainers)
 

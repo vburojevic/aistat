@@ -32,13 +32,21 @@ type CodexNotifyPayload struct {
 	} `json:"data"`
 }
 
+type CodexNotifyPatch struct {
+	SessionID string `json:"session_id"`
+	At        string `json:"at"`
+	CWD       string `json:"cwd,omitempty"`
+	ThreadID  string `json:"thread_id,omitempty"`
+	TurnID    string `json:"turn_id,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Message   string `json:"message,omitempty"`
+	EventName string `json:"event_name,omitempty"`
+	EventType string `json:"event_type,omitempty"`
+}
+
 func ingestCodexNotify(r io.Reader) error {
 	if f, ok := r.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		// Avoid reading from a TTY; notify input should be piped JSON.
-		return nil
-	}
-	if !stdinReady(r, 500*time.Millisecond) {
-		// Avoid hanging if no stdin data is available.
 		return nil
 	}
 	var n CodexNotifyPayload
@@ -49,9 +57,9 @@ func ingestCodexNotify(r io.Reader) error {
 		}
 		return err
 	}
-	id := strings.TrimSpace(n.Data.SessionID)
+	id := normalizePlaceholder(n.Data.SessionID)
 	if id == "" {
-		id = strings.TrimSpace(n.Data.ThreadID)
+		id = normalizePlaceholder(n.Data.ThreadID)
 	}
 	if id == "" {
 		// Avoid breaking user’s Codex. Just no-op.
@@ -65,22 +73,21 @@ func ingestCodexNotify(r io.Reader) error {
 		}
 	}
 
-	return updateRecord(ProviderCodex, id, func(rec *SessionRecord) {
-		rec.LastSeen = maxTime(rec.LastSeen, ts)
-		rec.LastEvent = maxTime(rec.LastEvent, ts)
-		rec.LastEventName = "notify:" + n.Type
-
-		if n.Data.CWD != "" {
-			rec.CWD = n.Data.CWD
-		}
-		rec.ThreadID = n.Data.ThreadID
-		rec.TurnID = n.Data.TurnID
-		rec.Title = n.Data.Title
-		rec.Message = n.Data.Message
-
-		rec.Status = StatusWaiting
-		rec.StatusReason = "turn complete"
-	})
+	patch := CodexNotifyPatch{
+		SessionID: id,
+		At:        ts.Format(time.RFC3339Nano),
+		CWD:       normalizePlaceholder(n.Data.CWD),
+		ThreadID:  normalizePlaceholder(n.Data.ThreadID),
+		TurnID:    normalizePlaceholder(n.Data.TurnID),
+		Title:     normalizePlaceholder(n.Data.Title),
+		Message:   n.Data.Message,
+		EventName: "notify:" + n.Type,
+		EventType: n.Type,
+	}
+	if b, err := json.Marshal(patch); err == nil {
+		_ = writeSpoolBytes(ProviderCodex, "notify", id, b, true)
+	}
+	return nil
 }
 
 type codexLogEntry struct {
@@ -161,16 +168,19 @@ func scanCodexRollouts(cfg Config, now time.Time) ([]SessionRecord, error) {
 		if err != nil {
 			continue
 		}
-		id := hdr.SessionID
+		id := normalizePlaceholder(hdr.SessionID)
 		if id == "" {
-			id = strings.TrimSuffix(filepath.Base(fp), ".jsonl")
+			id = normalizePlaceholder(strings.TrimSuffix(filepath.Base(fp), ".jsonl"))
+		}
+		if id == "" {
+			continue
 		}
 
 		rec := SessionRecord{
 			Provider:          ProviderCodex,
 			ID:                id,
 			RolloutPath:       fp,
-			CWD:               hdr.CWD,
+			CWD:               normalizePlaceholder(hdr.CWD),
 			ModelID:           hdr.Model,
 			ApprovalPolicy:    hdr.ApprovalPolicy,
 			LastSeen:          tail.LastTS,
@@ -230,10 +240,10 @@ func scanCodexHeader(filePath string, maxLines int) (codexHeader, error) {
 			var payload map[string]any
 			_ = json.Unmarshal(e.Payload, &payload)
 			if hdr.SessionID == "" {
-				hdr.SessionID = asString(payload["id"])
+				hdr.SessionID = normalizePlaceholder(asString(payload["id"]))
 			}
 			if hdr.CWD == "" {
-				hdr.CWD = asString(payload["cwd"])
+				hdr.CWD = normalizePlaceholder(asString(payload["cwd"]))
 			}
 			if hdr.CreatedAt.IsZero() {
 				if ts := asString(payload["timestamp"]); ts != "" {
@@ -246,13 +256,13 @@ func scanCodexHeader(filePath string, maxLines int) (codexHeader, error) {
 			var payload map[string]any
 			_ = json.Unmarshal(e.Payload, &payload)
 			if hdr.CWD == "" {
-				hdr.CWD = asString(payload["cwd"])
+				hdr.CWD = normalizePlaceholder(asString(payload["cwd"]))
 			}
 			if hdr.Model == "" {
-				hdr.Model = asString(payload["model"])
+				hdr.Model = normalizePlaceholder(asString(payload["model"]))
 			}
 			if hdr.ApprovalPolicy == "" {
-				hdr.ApprovalPolicy = asString(payload["approval_policy"])
+				hdr.ApprovalPolicy = normalizePlaceholder(asString(payload["approval_policy"]))
 			}
 		}
 		if hdr.SessionID != "" && hdr.CWD != "" && hdr.Model != "" {

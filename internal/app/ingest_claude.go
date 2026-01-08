@@ -21,10 +21,6 @@ func ingestClaudeHook(r io.Reader) error {
 		// Avoid reading from a TTY; hook input should be piped JSON.
 		return nil
 	}
-	if !stdinReady(r, 500*time.Millisecond) {
-		// Avoid hanging if no stdin data is available.
-		return nil
-	}
 	var m map[string]any
 	dec := json.NewDecoder(io.LimitReader(r, 10*1024*1024))
 	if err := dec.Decode(&m); err != nil {
@@ -35,76 +31,70 @@ func ingestClaudeHook(r io.Reader) error {
 	}
 
 	event := strings.TrimSpace(getString(m, "hook_event_name"))
-	sid := strings.TrimSpace(getString(m, "session_id"))
+	sid := normalizePlaceholder(getString(m, "session_id"))
 	if sid == "" {
 		// No session => ignore (but return nil to not break hooks)
 		return nil
 	}
 
 	now := time.Now().UTC()
-	tp := getString(m, "transcript_path")
-	cwd := getString(m, "cwd")
+	tp := normalizePlaceholder(getString(m, "transcript_path"))
+	cwd := normalizePlaceholder(getString(m, "cwd"))
 
-	notifType := getString(m, "notification_type")
+	notifType := normalizePlaceholder(getString(m, "notification_type"))
 	notifMsg := getString(m, "message")
 
-	return updateRecord(ProviderClaude, sid, func(rec *SessionRecord) {
-		if tp != "" {
-			rec.TranscriptPath = tp
-		}
-		if cwd != "" {
-			rec.CWD = cwd
-		}
-		rec.LastEvent = now
-		rec.LastEventName = event
-		rec.LastSeen = maxTime(rec.LastSeen, now)
+	patch := ClaudeHookPatch{
+		SessionID:      sid,
+		At:             now.Format(time.RFC3339Nano),
+		TranscriptPath: tp,
+		CWD:            cwd,
+		LastEventName:  event,
+	}
 
-		switch event {
-		case "SessionStart":
-			rec.Status = StatusRunning
-			rec.StatusReason = "session started"
-			rec.EndedAt = nil
-			rec.LastNotificationType = ""
-			rec.LastNotificationMsg = ""
-		case "UserPromptSubmit":
-			rec.Status = StatusRunning
-			rec.StatusReason = "user prompt submitted"
-			rec.LastNotificationType = ""
-			rec.LastNotificationMsg = ""
-		case "PreToolUse", "PostToolUse":
-			rec.Status = StatusRunning
-			rec.StatusReason = "tool activity"
-			rec.LastNotificationType = ""
-			rec.LastNotificationMsg = ""
-		case "Stop":
-			rec.Status = StatusWaiting
-			rec.StatusReason = "awaiting input"
-		case "Notification":
-			rec.LastNotificationType = notifType
-			rec.LastNotificationMsg = notifMsg
-			switch notifType {
-			case "permission_prompt":
-				rec.Status = StatusApproval
-				rec.StatusReason = "awaiting approval"
-			case "idle_prompt":
-				rec.Status = StatusWaiting
-				rec.StatusReason = "awaiting input"
-			default:
-				rec.Status = StatusWaiting
-				if notifType != "" {
-					rec.StatusReason = "notification: " + notifType
-				} else {
-					rec.StatusReason = "notification"
-				}
-			}
-		case "SessionEnd":
-			rec.Status = StatusEnded
-			rec.StatusReason = "session ended"
-			rec.EndedAt = ptrTime(now)
+	switch event {
+	case "SessionStart":
+		patch.Status = StatusRunning
+		patch.StatusReason = "session started"
+	case "UserPromptSubmit":
+		patch.Status = StatusRunning
+		patch.StatusReason = "user prompt submitted"
+	case "PreToolUse", "PostToolUse":
+		patch.Status = StatusRunning
+		patch.StatusReason = "tool activity"
+	case "Stop":
+		patch.Status = StatusWaiting
+		patch.StatusReason = "awaiting input"
+	case "Notification":
+		patch.LastNotificationType = notifType
+		patch.LastNotificationMsg = notifMsg
+		switch notifType {
+		case "permission_prompt":
+			patch.Status = StatusApproval
+			patch.StatusReason = "awaiting approval"
+		case "idle_prompt":
+			patch.Status = StatusWaiting
+			patch.StatusReason = "awaiting input"
 		default:
-			// keep as-is
+			patch.Status = StatusWaiting
+			if notifType != "" {
+				patch.StatusReason = "notification: " + notifType
+			} else {
+				patch.StatusReason = "notification"
+			}
 		}
-	})
+	case "SessionEnd":
+		patch.Status = StatusEnded
+		patch.StatusReason = "session ended"
+		patch.EndedAt = now.Format(time.RFC3339Nano)
+	default:
+		// keep as-is
+	}
+
+	if b, err := json.Marshal(patch); err == nil {
+		_ = writeSpoolBytes(ProviderClaude, "hook", sid, b, true)
+	}
+	return nil
 }
 
 type ClaudeStatuslineInput struct {
@@ -141,13 +131,45 @@ type ClaudeStatuslineInput struct {
 	} `json:"context_window"`
 }
 
+type ClaudeHookPatch struct {
+	SessionID            string `json:"session_id"`
+	At                   string `json:"at"`
+	TranscriptPath       string `json:"transcript_path,omitempty"`
+	CWD                  string `json:"cwd,omitempty"`
+	LastEventName        string `json:"last_event_name,omitempty"`
+	Status               Status `json:"status,omitempty"`
+	StatusReason         string `json:"status_reason,omitempty"`
+	EndedAt              string `json:"ended_at,omitempty"`
+	LastNotificationType string `json:"last_notification_type,omitempty"`
+	LastNotificationMsg  string `json:"last_notification_msg,omitempty"`
+}
+
+type ClaudeStatuslinePatch struct {
+	SessionID                string  `json:"session_id"`
+	At                       string  `json:"at"`
+	TranscriptPath           string  `json:"transcript_path,omitempty"`
+	CWD                      string  `json:"cwd,omitempty"`
+	ProjectDir               string  `json:"project_dir,omitempty"`
+	ModelID                  string  `json:"model_id,omitempty"`
+	ModelDisplay             string  `json:"model_display,omitempty"`
+	CostUSD                  float64 `json:"cost_usd,omitempty"`
+	DurationMS               int64   `json:"duration_ms,omitempty"`
+	APIDurationMS            int64   `json:"api_duration_ms,omitempty"`
+	LinesAdded               int     `json:"lines_added,omitempty"`
+	LinesRemoved             int     `json:"lines_removed,omitempty"`
+	TotalInputTokens         int     `json:"total_input_tokens,omitempty"`
+	TotalOutputTokens        int     `json:"total_output_tokens,omitempty"`
+	ContextWindowSize        int     `json:"context_window_size,omitempty"`
+	CurrentInputTokens       int     `json:"current_input_tokens,omitempty"`
+	CurrentOutputTokens      int     `json:"current_output_tokens,omitempty"`
+	CurrentCacheCreateTokens int     `json:"current_cache_create_tokens,omitempty"`
+	CurrentCacheReadTokens   int     `json:"current_cache_read_tokens,omitempty"`
+}
+
 // ingestClaudeStatusline updates the session record and returns a single-line statusline string for Claude Code.
 func ingestClaudeStatusline(r io.Reader) (string, error) {
 	if f, ok := r.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		return "", errors.New("stdin is a TTY")
-	}
-	if !stdinReady(r, 200*time.Millisecond) {
-		return "", errors.New("stdin not ready")
 	}
 	var in ClaudeStatuslineInput
 	dec := json.NewDecoder(io.LimitReader(r, 10*1024*1024))
@@ -157,70 +179,62 @@ func ingestClaudeStatusline(r io.Reader) (string, error) {
 	if strings.TrimSpace(in.SessionID) == "" {
 		return "", errors.New("missing session_id")
 	}
+	in.SessionID = normalizePlaceholder(in.SessionID)
+	if in.SessionID == "" {
+		return "", errors.New("invalid session_id")
+	}
 
 	cfg := loadConfig()
 	now := time.Now().UTC()
 	sid := in.SessionID
 
-	// Throttled write (statusline can be called a lot).
-	p, err := recordPath(ProviderClaude, sid)
-	if err != nil {
-		return "", err
+	// Spool a lightweight patch for aistat to apply during refresh.
+	shouldSpool := true
+	if p, err := spoolPath(ProviderClaude, "statusline", sid); err == nil {
+		if st, err := os.Stat(p); err == nil {
+			if now.Sub(st.ModTime()) < cfg.StatuslineMinWrite {
+				shouldSpool = false
+			}
+		}
 	}
-	lock := p + ".lock"
-	_ = withLock(lock, func() error {
-		rec := SessionRecord{Provider: ProviderClaude, ID: sid}
-		if existing, err := loadRecord(p); err == nil {
-			rec = existing
+	if shouldSpool {
+		patch := ClaudeStatuslinePatch{
+			SessionID:                sid,
+			At:                       now.Format(time.RFC3339Nano),
+			TranscriptPath:           normalizePlaceholder(in.TranscriptPath),
+			ModelID:                  normalizePlaceholder(in.Model.ID),
+			ModelDisplay:             normalizePlaceholder(in.Model.DisplayName),
+			CostUSD:                  in.Cost.TotalCostUSD,
+			DurationMS:               in.Cost.TotalDurationMS,
+			APIDurationMS:            in.Cost.TotalAPIDurationMS,
+			LinesAdded:               in.Cost.TotalLinesAdded,
+			LinesRemoved:             in.Cost.TotalLinesRemoved,
+			TotalInputTokens:         in.ContextWindow.TotalInputTokens,
+			TotalOutputTokens:        in.ContextWindow.TotalOutputTokens,
+			ContextWindowSize:        in.ContextWindow.ContextWindowSize,
+			CurrentInputTokens:       0,
+			CurrentOutputTokens:      0,
+			CurrentCacheCreateTokens: 0,
+			CurrentCacheReadTokens:   0,
 		}
-
-		if !rec.UpdatedAt.IsZero() && now.Sub(rec.UpdatedAt) < cfg.StatuslineMinWrite && rec.ModelID != "" {
-			// Skip writing to disk; we'll refresh later.
-			return nil
+		if cwd := normalizePlaceholder(in.Workspace.CurrentDir); cwd != "" {
+			patch.CWD = cwd
+		} else if cwd := normalizePlaceholder(in.CWD); cwd != "" {
+			patch.CWD = cwd
 		}
-
-		if in.TranscriptPath != "" {
-			rec.TranscriptPath = in.TranscriptPath
+		if pd := normalizePlaceholder(in.Workspace.ProjectDir); pd != "" {
+			patch.ProjectDir = pd
 		}
-		if in.Workspace.CurrentDir != "" {
-			rec.CWD = in.Workspace.CurrentDir
-		} else if in.CWD != "" {
-			rec.CWD = in.CWD
-		}
-		if in.Workspace.ProjectDir != "" {
-			rec.ProjectDir = in.Workspace.ProjectDir
-		}
-		rec.ModelID = in.Model.ID
-		rec.ModelDisplay = in.Model.DisplayName
-
-		rec.CostUSD = in.Cost.TotalCostUSD
-		rec.DurationMS = in.Cost.TotalDurationMS
-		rec.APIDurationMS = in.Cost.TotalAPIDurationMS
-		rec.LinesAdded = in.Cost.TotalLinesAdded
-		rec.LinesRemoved = in.Cost.TotalLinesRemoved
-
-		rec.TotalInputTokens = in.ContextWindow.TotalInputTokens
-		rec.TotalOutputTokens = in.ContextWindow.TotalOutputTokens
-		rec.ContextWindowSize = in.ContextWindow.ContextWindowSize
 		if in.ContextWindow.CurrentUsage != nil {
-			rec.CurrentInputTokens = in.ContextWindow.CurrentUsage.InputTokens
-			rec.CurrentOutputTokens = in.ContextWindow.CurrentUsage.OutputTokens
-			rec.CurrentCacheCreateTokens = in.ContextWindow.CurrentUsage.CacheCreationInputTokens
-			rec.CurrentCacheReadTokens = in.ContextWindow.CurrentUsage.CacheReadInputTokens
+			patch.CurrentInputTokens = in.ContextWindow.CurrentUsage.InputTokens
+			patch.CurrentOutputTokens = in.ContextWindow.CurrentUsage.OutputTokens
+			patch.CurrentCacheCreateTokens = in.ContextWindow.CurrentUsage.CacheCreationInputTokens
+			patch.CurrentCacheReadTokens = in.ContextWindow.CurrentUsage.CacheReadInputTokens
 		}
-
-		rec.LastSeen = maxTime(rec.LastSeen, now)
-		if rec.Status == "" || rec.Status == StatusUnknown {
-			rec.Status = StatusRunning
-			rec.StatusReason = "active"
+		if b, err := json.Marshal(patch); err == nil {
+			_ = writeSpoolBytes(ProviderClaude, "statusline", sid, b, true)
 		}
-		rec.UpdatedAt = now
-
-		// Ensure dirs exist then save.
-		_ = ensureAppDirs()
-		return saveRecord(p, rec)
-	})
-
+	}
 	// Build a compact statusline for Claude Code (ANSI is allowed).
 	model := in.Model.DisplayName
 	if model == "" {

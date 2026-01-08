@@ -22,6 +22,9 @@ func RenderDetail(s *state.SessionView, styles theme.Styles, width int) string {
 	statusIcon := widgets.StatusIcon(s.Status, styles)
 	statusText := statusLabel(s.Status)
 	b.WriteString(renderRow("Status", statusIcon+" "+statusText, styles))
+	if s.Reason != "" {
+		b.WriteString(renderRow("Reason", s.Reason, styles))
+	}
 
 	// Project
 	if s.Project != "" {
@@ -47,24 +50,75 @@ func RenderDetail(s *state.SessionView, styles theme.Styles, width int) string {
 	// Age
 	b.WriteString(renderRow("Age", widgets.FormatAge(s.Age), styles))
 
+	// Working directory
+	if s.Dir != "" {
+		b.WriteString(renderRow("CWD", s.Dir, styles))
+	}
+
 	// Provider (with colored icon)
 	providerIcon := widgets.ProviderLetterStyled(s.Provider, styles)
 	providerName := providerLabel(s.Provider)
 	b.WriteString(renderRow("Provider", providerIcon+" "+providerName, styles))
 
-	// Session ID (truncated)
-	id := s.ID
-	if len(id) > 20 {
-		id = id[:8] + "..." + id[len(id)-4:]
+	// Session ID (full)
+	if s.ID != "" {
+		b.WriteString(renderRow("Session", s.ID, styles))
 	}
-	b.WriteString(renderRow("Session", id, styles))
+
+	// Source path
+	if s.SourcePath != "" {
+		b.WriteString(renderRow("Source", s.SourcePath, styles))
+	}
 
 	// Last seen timestamp
 	if !s.LastSeen.IsZero() {
-		b.WriteString(renderRow("Last Seen", s.LastSeen.In(time.Local).Format("15:04:05"), styles))
+		b.WriteString(renderRow("Last Seen", s.LastSeen.In(time.Local).Format("2006-01-02 15:04:05"), styles))
 	}
 
-	// Last AI message
+	// Extra detail lines (provider-specific)
+	if strings.TrimSpace(s.Detail) != "" {
+		b.WriteString("\n")
+		b.WriteString(styles.Label.Render("More:"))
+		b.WriteString("\n")
+		skip := map[string]bool{
+			"status":   true,
+			"reason":   true,
+			"project":  true,
+			"model":    true,
+			"cost":     true,
+			"cwd":      true,
+			"last":     true,
+			"provider": true,
+			"session":  true,
+		}
+		for _, line := range strings.Split(s.Detail, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			if idx := strings.Index(line, ":"); idx > 0 {
+				key := strings.TrimSpace(line[:idx])
+				val := strings.TrimSpace(line[idx+1:])
+				if skip[strings.ToLower(key)] {
+					continue
+				}
+				b.WriteString(renderRow(key, val, styles))
+				continue
+			}
+			b.WriteString(styles.Muted.Render(line))
+			b.WriteString("\n")
+		}
+	}
+
+	// Last user/AI messages
+	if s.LastUser != "" {
+		b.WriteString("\n")
+		b.WriteString(styles.Label.Render("Last User:"))
+		b.WriteString("\n")
+		userMsg := truncate(s.LastUser, 200)
+		b.WriteString(styles.Muted.Render(userMsg))
+		b.WriteString("\n")
+	}
 	if s.LastAssist != "" {
 		b.WriteString("\n")
 		b.WriteString(styles.Label.Render("Last AI:"))

@@ -407,11 +407,8 @@ func (m *Model) renderSessionRow(s state.SessionView, selected bool, width int) 
 		pinIndicator = m.styles.DotNeedsInput.Render("★")
 	}
 
-	// Urgency indicator for needs-input sessions
+	// Keep a spacer for column alignment; status icon already conveys urgency.
 	urgency := " "
-	if widgets.ToUIStatus(s.Status) == widgets.UIStatusNeedsInput {
-		urgency = m.styles.DotNeedsInput.Render("⚡")
-	}
 
 	// Status icon (keeps its color regardless of age)
 	var icon string

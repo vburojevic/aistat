@@ -45,6 +45,38 @@ func asString(v any) string {
 	}
 }
 
+func normalizePlaceholder(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	switch strings.ToLower(s) {
+	case "-", "unknown", "null", "nil", "(null)", "n/a", "na":
+		return ""
+	default:
+		return s
+	}
+}
+
+func validSessionID(id string) bool {
+	return normalizePlaceholder(id) != ""
+}
+
+func claudeProjectFromTranscript(path string) string {
+	path = normalizePlaceholder(path)
+	if path == "" {
+		return ""
+	}
+	path = filepath.Clean(path)
+	parts := strings.Split(path, string(os.PathSeparator))
+	for i := 0; i+2 < len(parts); i++ {
+		if parts[i] == ".claude" && parts[i+1] == "projects" {
+			return parts[i+2]
+		}
+	}
+	return ""
+}
+
 func readTailBytes(path string, maxBytes int) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -91,6 +123,25 @@ func stdinReady(r io.Reader, timeout time.Duration) bool {
 		return false
 	}
 	return fds[0].Revents&(unix.POLLIN|unix.POLLHUP|unix.POLLERR) != 0
+}
+
+func redirectStdoutStderrToDevNull() {
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer devNull.Close()
+	_ = unix.Dup2(int(devNull.Fd()), int(os.Stdout.Fd()))
+	_ = unix.Dup2(int(devNull.Fd()), int(os.Stderr.Fd()))
+}
+
+func redirectStderrToDevNull() {
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer devNull.Close()
+	_ = unix.Dup2(int(devNull.Fd()), int(os.Stderr.Fd()))
 }
 
 func splitLines(b []byte) []string {

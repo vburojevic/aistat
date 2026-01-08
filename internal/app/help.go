@@ -104,6 +104,7 @@ func buildHelpDoc() helpDoc {
 		{Name: "install", Usage: "aistat install [flags]", Description: "Install Claude/Codex integrations"},
 		{Name: "doctor", Usage: "aistat doctor [--fix]", Description: "Check setup and optionally auto-fix"},
 		{Name: "config", Usage: "aistat config --show|--init", Description: "Show or initialize config"},
+		{Name: "clean", Usage: "aistat clean [--dry-run] [--spool] [--sessions]", Description: "Remove spool files and invalid session records"},
 		{Name: "help", Usage: "aistat help [--format json]", Description: "Extended help for humans/agents"},
 	}
 
@@ -119,6 +120,7 @@ func buildHelpDoc() helpDoc {
 			"aistat install [flags]",
 			"aistat doctor [--fix]",
 			"aistat config --show|--init",
+			"aistat clean [--dry-run]",
 			"aistat help [--format json]",
 		},
 		Commands:    commands,

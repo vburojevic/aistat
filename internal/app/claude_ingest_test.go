@@ -47,6 +47,10 @@ func TestIngestClaudeStatusline(t *testing.T) {
 		t.Fatalf("expected model in statusline, got: %q", line)
 	}
 
+	if err := drainClaudeSpool(); err != nil {
+		t.Fatalf("drainClaudeSpool error: %v", err)
+	}
+
 	p, err := recordPath(ProviderClaude, "sess-1")
 	if err != nil {
 		t.Fatalf("recordPath error: %v", err)
